@@ -1,5 +1,16 @@
+# ignore config files
+.DS_Store
+.vscode/
+
+# ignore note-taking
+chlamy_impi/plans.md
+journal.md
+
 # ignore large image files
 *.tif
+
+# ignore poetry lock file
+poetry.lock
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
