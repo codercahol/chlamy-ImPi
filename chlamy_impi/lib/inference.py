@@ -4,6 +4,22 @@ from lib.constants import NUM_ROWS, NUM_COLUMNS
 import numpy as np
 
 
+def mean_fluorescence(crops):
+    """
+    Compute the mean fluorescence across non-masked pixels in each crop.
+    Input:
+        crops: 3D numpy array of shape
+                (num_timesteps, num_rows, num_columns, X_num_pixels, Y_num_pixels)
+    Output:
+        mean_fluorescences: 3D numpy array of shape (num_timesteps, num_rows, num_columns)
+    """
+    signal_pixel_counts = torch.sum(crops > 0, dim=(3, 4))
+    fluorescences = torch.sum(crops, dim=(3, 4))
+    mean_fluorescences = fluorescences / signal_pixel_counts
+    return mean_fluorescences
+
+
+# TODO - undo HACK: removal of ctrl in top left corner
 def compute_photosynthetic_params(mean_fluorescences):
     if type(mean_fluorescences) == str:
         # or
@@ -14,12 +30,12 @@ def compute_photosynthetic_params(mean_fluorescences):
     ctrl_Fs = ctrl[2:102:2, np.newaxis, np.newaxis]
     ctrl_Fm_prime = ctrl[3:102:2, np.newaxis, np.newaxis]
 
-    F0 = mf[0, :, :] - ctrl[0]
-    Fm = mf[1, :, :] - ctrl[1]
+    F0 = mf[0, :, :]  # - ctrl[0]
+    Fm = mf[1, :, :]  # - ctrl[1]
     Fv = Fm - F0
     QEY = Fv / Fm  # quantum yield of PSII
-    Fs = mf[2:102:2, :, :] - ctrl_Fs
-    Fm_prime = mf[3:102:2, :, :] - ctrl_Fm_prime
+    Fs = mf[2:102:2, :, :]  # - ctrl_Fs
+    Fm_prime = mf[3:102:2, :, :]  # - ctrl_Fm_prime
     PY = (Fm_prime - Fs) / Fm_prime
     NPQ = (Fm - Fm_prime) / Fm_prime
     Y_NPQ = Fs / Fm * NPQ

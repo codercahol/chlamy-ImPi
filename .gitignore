@@ -1,5 +1,14 @@
 # ignore large image files
 *.tif
+*.png
+
+# ignore large NN models
+*.pth
+
+# ignore
+.DS_Store
+.vscode/
+*.md
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

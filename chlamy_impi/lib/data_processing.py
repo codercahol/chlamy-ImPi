@@ -5,7 +5,9 @@ from loguru import logger
 import matplotlib.pyplot as plt
 import cv2
 from skimage import io
-from lib import constants as const
+
+# from lib import constants as const
+from lib import constants4blank as const
 from lib import utils
 from torchvision.utils import save_image
 import openpyxl as xl
@@ -193,7 +195,9 @@ def disk_mask(width_x, width_y, radius_fraction=4 / 5):
     return sphere
 
 
-def compute_noise_threshold(ctrl_imgs, display=False, n_stdDevs=5):
+def compute_noise_threshold(ctrl_imgs, subset_idxs=None, display=False, n_stdDevs=5):
+    if subset_idxs is not None:
+        ctrl_imgs = ctrl_imgs[subset_idxs]
     if display:
         plt.imshow(ctrl_imgs[0])
     mean = ctrl_imgs.mean()
@@ -316,6 +320,39 @@ def load_strain_names(
     if plate_layout_savepath != "":
         utils.to_pickle(plate_layout_df, plate_layout_savepath)
     return WTs, plate_layout_df
+
+
+def reassemble_crops(crops, num_timesteps):
+    """
+    Re-assemble the crops into a single image
+    """
+    img = torch.zeros(
+        size=(
+            num_timesteps,
+            const.NUM_ROWS * const.CELL_WIDTH_X,
+            const.NUM_COLUMNS * const.CELL_WIDTH_Y,
+        )
+    )
+    for i in range(const.NUM_ROWS):
+        for j in range(const.NUM_COLUMNS):
+            img[
+                :,
+                i * const.CELL_WIDTH_X : (i + 1) * const.CELL_WIDTH_X,
+                j * const.CELL_WIDTH_Y : (j + 1) * const.CELL_WIDTH_Y,
+            ] = crops[:, i, j]
+    """
+    dims = [NUM_ROWS * CELL_WIDTH_X, NUM_COLUMNS * CELL_WIDTH_Y]
+    big = torch.zeros(dims)
+    for i in range(NUM_ROWS):
+        for j in range(NUM_COLUMNS):
+            start_x = i * CELL_WIDTH_X
+            end_x = (i + 1) * CELL_WIDTH_X
+            start_y = j* CELL_WIDTH_Y
+            end_y = (j+1)* CELL_WIDTH_Y
+
+            big[start_x:end_x, start_y:end_y] 
+    """
+    return img
 
 
 # TODO - merge all the inferred params into one dataframe(?)
