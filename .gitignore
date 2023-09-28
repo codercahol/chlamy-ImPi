@@ -13,11 +13,6 @@ journal.md
 # ignore large NN models
 *.pth
 
-# ignore
-.DS_Store
-.vscode/
-*.md
-
 # ignore poetry lock file
 poetry.lock
 
