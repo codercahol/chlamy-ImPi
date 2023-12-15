@@ -13,11 +13,13 @@ from skimage import io, morphology
 import matplotlib.pyplot as plt
 import matplotlib
 from segment_multiwell_plate import segment_multiwell_plate
-
-
-matplotlib.use('agg')  # Fix for matplotlib memory leak, see https://github.com/matplotlib/matplotlib/issues/20067
 from tqdm import tqdm
 import pandas as pd
+import platform
+
+# Fix for matplotlib memory leak, see https://github.com/matplotlib/matplotlib/issues/20067
+if platform.system() == "Linux":
+    matplotlib.use("agg")
 
 logger = logging.getLogger(__name__)
 logging.getLogger("matplotlib").setLevel(logging.WARNING)
@@ -102,13 +104,17 @@ def remove_failed_photos(tif):
     max_per_timestep = tif.max(1).max(1)
     keep_image = max_per_timestep > 0
 
-    logger.info(f"Discarding {sum(~keep_image)} images (indices {list(np.argwhere(~keep_image))}) which are all black")
+    logger.info(
+        f"Discarding {sum(~keep_image)} images (indices {list(np.argwhere(~keep_image))}) which are all black"
+    )
 
     tif = tif[keep_image]
     return tif, sum(~keep_image)
 
 
-def visualise_grid_crop(tif, img_array, i_vals, j_vals, well_coords, savedir, max_channels=5):
+def visualise_grid_crop(
+    tif, img_array, i_vals, j_vals, well_coords, savedir, max_channels=5
+):
     logger.debug(f"Writing out plots of grid crop in {savedir}")
     savedir.mkdir(parents=True, exist_ok=True)
 
@@ -122,7 +128,13 @@ def visualise_grid_crop(tif, img_array, i_vals, j_vals, well_coords, savedir, ma
         fig, ax = plt.subplots(1, 1, figsize=(10, 8))
         ax.imshow(tif[channel, :, :])
         # Draw well centre coords
-        ax.scatter(list(zip(*well_coords))[1], list(zip(*well_coords))[0], color="red", marker="x", s=2)
+        ax.scatter(
+            list(zip(*well_coords))[1],
+            list(zip(*well_coords))[0],
+            color="red",
+            marker="x",
+            s=2,
+        )
         # Draw grid
         ax.plot(jv, iv, color="red")
         ax.plot(jv2, iv2, color="red")
@@ -134,7 +146,11 @@ def visualise_grid_crop(tif, img_array, i_vals, j_vals, well_coords, savedir, ma
         for i, j in itertools.product(range(array_shape[0]), range(array_shape[1])):
             ax = axs[i, j]
             ax.axis("off")
-            ax.imshow(img_array[i, j, channel], vmin=tif[channel].min(), vmax=tif[channel].max())
+            ax.imshow(
+                img_array[i, j, channel],
+                vmin=tif[channel].min(),
+                vmax=tif[channel].max(),
+            )
         fig.savefig(savedir / f"{channel}_subimage_array.png")
         fig.clf()
         plt.close(fig)
@@ -145,7 +161,9 @@ def estimate_noise_threshold(img_array):
     std = img_array[0, 0, :].std()
     threshold = mean + 3 * std
 
-    logger.info(f"Computed threshold using blank control. mean : {mean}, std {std}, threshold {threshold}")
+    logger.info(
+        f"Computed threshold using blank control. mean : {mean}, std {std}, threshold {threshold}"
+    )
 
     return threshold
 
@@ -156,8 +174,8 @@ def find_mask_array(img_array, threshold):
     img_array_mins = np.min(img_array, axis=2)
     mask_array = img_array_mins > threshold
 
-    #disk_mask = get_disk_mask(img_array)
-    #mask_array = np.logical_and(mask_array, disk_mask)
+    # disk_mask = get_disk_mask(img_array)
+    # mask_array = np.logical_and(mask_array, disk_mask)
 
     return mask_array
 
@@ -177,15 +195,14 @@ def validate_well_mask_array(mask_array) -> int:
 
     num_overlapping = np.sum(arr)
 
-    #assert num_overlapping <= 3, f"We have found overlapping masks for {num_overlapping} masks"
+    # assert num_overlapping <= 3, f"We have found overlapping masks for {num_overlapping} masks"
     logger.info(f"We have found overlapping masks for {num_overlapping} masks")
 
     return num_overlapping
 
 
 def has_true_on_boundary(arr):
-    """Check if mask reaches edge of cell - should always be false
-    """
+    """Check if mask reaches edge of cell - should always be false"""
 
     # Check the top and bottom rows
     if np.any(arr[0, :]) or np.any(arr[-1, :]):
@@ -202,7 +219,9 @@ def get_disk_mask(img_array):
     disk_radius = min(img_array.shape[-2:]) // 2
     disk_mask = morphology.disk(radius=disk_radius, dtype=bool)
     if disk_mask.shape[0] > img_array.shape[3]:
-        assert img_array.shape[3] == img_array.shape[4]  # Check assumption of square cells
+        assert (
+            img_array.shape[3] == img_array.shape[4]
+        )  # Check assumption of square cells
         disk_mask = disk_mask[:-1, :-1]
     assert disk_mask.shape == img_array.shape[-2:]
     return disk_mask
@@ -247,8 +266,13 @@ def save_mean_array(mean_fluor_array, name):
 
     # Also save as csv to be read using pandas
     rows = []
-    for i, j in itertools.product(range(mean_fluor_array.shape[0]), range(mean_fluor_array.shape[1])):
-        col_to_val = {f"mean_fluorescence_frame_{k}": mean_fluor_array[i, j, k] for k in range(mean_fluor_array.shape[2])}
+    for i, j in itertools.product(
+        range(mean_fluor_array.shape[0]), range(mean_fluor_array.shape[1])
+    ):
+        col_to_val = {
+            f"mean_fluorescence_frame_{k}": mean_fluor_array[i, j, k]
+            for k in range(mean_fluor_array.shape[2])
+        }
         col_to_val.update({"row": i, "col": j})
         rows.append(col_to_val)
     df = pd.DataFrame(rows)
@@ -258,12 +282,11 @@ def save_mean_array(mean_fluor_array, name):
 
 
 def process_single_image(filename):
-
-
     return
 
 
 # TODO: create functions to get path to csv file with mean fluor values, and path to per-file results folder
+
 
 def main():
     logger.info("\n" + "=" * 32 + "\nStarting image_processing.py...\n" + "=" * 32)
@@ -271,7 +294,9 @@ def main():
     filenames = find_all_images()
 
     sep = "\n\t"
-    logger.info(f"Found a total of {len(filenames)} tif files: \n\t{sep.join(str(x) for x in filenames)}")
+    logger.info(
+        f"Found a total of {len(filenames)} tif files: \n\t{sep.join(str(x) for x in filenames)}"
+    )
 
     failed_files = []
 
@@ -292,9 +317,8 @@ def main():
             tif, num_blank_frames = remove_failed_photos(tif)
 
             img_array, well_coords, i_vals, j_vals = segment_multiwell_plate(
-                tif,
-                peak_finder_kwargs={"peak_prominence": 0.1},
-                output_full=True)
+                tif, peak_finder_kwargs={"peak_prominence": 0.1}, output_full=True
+            )
 
             threshold = estimate_noise_threshold(img_array)
 
@@ -314,13 +338,15 @@ def main():
 
             save_mean_array(mean_fluor_array, name)
 
-            plate_info = {"name": name,
-                 "timepoints": tif.shape[0],
-                 "num_blank_frames": num_blank_frames,
-                 "threshold": threshold,
-                 "total_wells": total_wells,
-                 "num_empty_wells": empty_wells,
-                 "num_overlapping_masks": num_overlapping}
+            plate_info = {
+                "name": name,
+                "timepoints": tif.shape[0],
+                "num_blank_frames": num_blank_frames,
+                "threshold": threshold,
+                "total_wells": total_wells,
+                "num_empty_wells": empty_wells,
+                "num_overlapping_masks": num_overlapping,
+            }
 
             df = load_plate_info()
             new_row = pd.DataFrame([plate_info])
@@ -329,8 +355,17 @@ def main():
 
             if OUTPUT_VISUALISATIONS:
                 visualise_channels(tif, savedir=results_dir_path(name) / "raw")
-                visualise_mask_array(mask_array, savedir=results_dir_path(name) / "masks")
-                visualise_grid_crop(tif, img_array, i_vals, j_vals, well_coords, savedir=results_dir_path(name) / "grid")
+                visualise_mask_array(
+                    mask_array, savedir=results_dir_path(name) / "masks"
+                )
+                visualise_grid_crop(
+                    tif,
+                    img_array,
+                    i_vals,
+                    j_vals,
+                    well_coords,
+                    savedir=results_dir_path(name) / "grid",
+                )
 
         except AssertionError as e:
             logger.error(f"File: {filename.stem}. Error: {e}")
@@ -344,5 +379,3 @@ def main():
 if __name__ == "__main__":
     logging.basicConfig(level=LOGGING_LEVEL)
     main()
-
-
