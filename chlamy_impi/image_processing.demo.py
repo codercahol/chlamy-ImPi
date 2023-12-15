@@ -14,7 +14,7 @@ from torchvision.utils import save_image
 from skimage import io
 from lib import utils
 from lib import data_processing as ip
-from lib.constants import *
+from lib.constants import config
 import lib.inference as inf
 from loguru import logger
 
@@ -22,6 +22,19 @@ from loguru import logger
 
 tiff_file = "../data/20230323 3h-3h Y(II).tif"
 tif = io.imread(tiff_file)  # open tiff file in read mode
+# %% Load Constants
+
+(
+    NUM_ROWS,
+    NUM_COLUMNS,
+    X_MIN,
+    CELL_WIDTH_X,
+    X_MAX,
+    Y_MIN,
+    CELL_WIDTH_Y,
+    Y_MAX,
+) = config("test_plate")
+
 # %% Filter out failed photos
 
 tif, _ = ip.remove_failed_photos(tif)

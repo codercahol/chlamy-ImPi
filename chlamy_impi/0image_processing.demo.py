@@ -7,18 +7,14 @@ import matplotlib.pyplot as plt
 %matplotlib inline
 import torch
 import torch.nn.functional as F
-# import torchvision.transforms as transforms
+import torchvision.transforms as transforms
 from torchvision.utils import save_image
 from skimage import io
 from lib import utils
 from lib import data_processing as ip
-from lib.constants import Config
+from lib.constants4blank import *
 import lib.inference as inf
 from loguru import logger
-
-# %% Load Constants
-
-C = Config()
 
 # %% Load the Image
 
@@ -56,12 +52,19 @@ ip.display_n(tif_blurred, 3)
 # should be the number of images divided by 2 bc we have F0 and Fm
 NUM_TIMESTEPS = tif.shape[0] #int(tif.shape[0] / 2)
 logger.debug("Hyperparameters\nNUM_TIMESTEPS: {}\nWidth (x,y): ({},{})".format(
-    NUM_TIMESTEPS, C.CELL_WIDTH_X, C.CELL_WIDTH_Y
+    NUM_TIMESTEPS, CELL_WIDTH_X, CELL_WIDTH_Y
 ))
 
-tif = ip.upscale(tif, factor=2, blurred=False)
-tif_blurred = ip.upscale(tif_blurred, factor=2)
+# upscale - HACK
+pre_upscale = tif_blurred.unsqueeze(0)
+pre_upscale_unblurred = torch.from_numpy(tif.astype(np.float32)).unsqueeze(0)
+upscaled_unblurred = F.interpolate(pre_upscale_unblurred, scale_factor=2, mode='bilinear', align_corners=True)[0]
+upscaled = F.interpolate(pre_upscale, scale_factor=2, mode='bilinear', align_corners=True)[0]
+tif = upscaled_unblurred
+tif_blurred = upscaled
 
+# total HACK
+# tif_blurred = tif_blurred - avg_img.unsqueeze(0)
 
 # %% Visualize the crops we defined on a random image
 
@@ -140,11 +143,11 @@ plt.imshow(np_img_dark)
 # %% Shrink masks to avoid contagion effects
 
 # Create a disk-like mask
-sphere = ip.disk_mask(C.CELL_WIDTH_X, C.CELL_WIDTH_Y)
+sphere = ip.disk_mask(CELL_WIDTH_X, CELL_WIDTH_Y)
 plt.imshow(sphere)
 # the x/y axes are deliberately flipped here
-plt.ylim(0, C.CELL_WIDTH_X)
-plt.xlim(0, C.CELL_WIDTH_Y)
+plt.ylim(0, CELL_WIDTH_X)
+plt.xlim(0, CELL_WIDTH_Y)
 
 # %%
 # Compute the intersection of the masks with the disk

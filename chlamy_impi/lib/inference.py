@@ -1,6 +1,5 @@
 import torch
 from lib import utils
-from lib.constants import NUM_ROWS, NUM_COLUMNS
 import numpy as np
 
 
@@ -42,7 +41,7 @@ def compute_photosynthetic_params(mean_fluorescences):
     return (QEY, PY, NPQ, Y_NPQ)
 
 
-def misplating_error(data, num_blanks):
+def misplating_error(data, num_blanks, num_rows, num_columns):
     """
     Estimate the error due to misplating, which results in wells with no growing cells.
     We assume that wells with a noise-corrected mean fluorescence == 0 are misplated.
@@ -50,7 +49,7 @@ def misplating_error(data, num_blanks):
         data: 3D numpy array of shape (num_timesteps, num_rows, num_columns)
         num_blanks: number of blanks in the plate
     """
-    total_wells = NUM_ROWS * NUM_COLUMNS - num_blanks
+    total_wells = num_rows * num_columns - num_blanks
     well_means = torch.mean(data, dim=[0])
     num_misplated = torch.sum(well_means == 0) - num_blanks
     misplated_error = num_misplated / total_wells

@@ -5,9 +5,8 @@ from loguru import logger
 import matplotlib.pyplot as plt
 import cv2
 from skimage import io
+import torch.nn.functional as F
 
-# from lib import constants as const
-from lib import constants4blank as const
 from lib import utils
 from torchvision.utils import save_image
 import openpyxl as xl
@@ -91,11 +90,7 @@ def display_n_crops(crops, n):
         plt.show()
 
 
-_GOLD = (255, 127, 127)
-_GREEN = (0, 127, 0)
-
-
-def draw_mark(cv_src, pts, pts2, color=_GOLD):
+def draw_mark(cv_src, pts, pts2):
     """
     Draws rectangles on an image
     Input:
@@ -106,10 +101,11 @@ def draw_mark(cv_src, pts, pts2, color=_GOLD):
     Output:
         None (modifies the input image)
     """
+    _GOLD = (255, 127, 127)
     cv2.rectangle(cv_src, pts, pts2, color=_GOLD, thickness=1)
 
 
-def generate_grid_crop_coordinates():
+def generate_grid_crop_coordinates(const):
     """
     Generate the coordinates for the grid crop
     """
@@ -145,7 +141,7 @@ def visualize_grid_crop(img, threshold=35):
     return input_img
 
 
-def grid_crop(img, num_timesteps):
+def grid_crop(const, img, num_timesteps):
     x = torch.round(torch.linspace(const.X_MIN, const.X_MAX, const.NUM_ROWS + 1)).to(
         torch.int16
     )
@@ -173,15 +169,10 @@ def grid_crop(img, num_timesteps):
     return crops
 
 
-def disk_mask(width_x, width_y, radius_fraction=4 / 5):
+def disk_mask(const, radius_fraction=4 / 5):
     """
     Create a disk-like mask
     """
-    # Co-Pilot's suggestion
-    # x = torch.linspace(-width_x, width_x, 2 * width_x + 1)
-    # y = torch.linspace(-width_y, width_y, 2 * width_y + 1)
-    # a, b = torch.meshgrid(x, y)
-    # sphere = (a ** 2 + b ** 2) <= (width_x ** 2 + width_y ** 2)
     sphere = torch.zeros(size=(const.CELL_WIDTH_X, const.CELL_WIDTH_Y))
     smaller_diameter = min(const.CELL_WIDTH_X, const.CELL_WIDTH_Y)
     for i in range(sphere.shape[0]):
@@ -207,7 +198,7 @@ def compute_noise_threshold(ctrl_imgs, subset_idxs=None, display=False, n_stdDev
     return THRESHOLD
 
 
-def log_hyperparameters(num_timesteps):
+def log_hyperparameters(const, num_timesteps):
     logger.debug(
         "Hyperparameters\nNUM_TIMESTEPS: {}\nWidth (x,y): ({},{})".format(
             num_timesteps, const.CELL_WIDTH_X, const.CELL_WIDTH_Y
@@ -231,12 +222,12 @@ def convert_to_3channel_img(twoD_img):
     return threeD_img
 
 
-# TODO - add high noise flag and compare to a control w/out noise reductions
-# TODO - compute # of empty crops
-def mean_fluorescences(tif_path, img_storage_path="", display=False, pickle_path=""):
+def clean_mask_n_crop(
+    const, tif_path, img_storage_path="", display=False, pickle_path=""
+):
     if img_storage_path == "" and display:
         raise ValueError(
-            "Images must be save in order to be displayed."
+            "Images must be saved in order to be displayed. "
             + "Please enter a path for the images to be saved."
         )
     # logging will either (save) or (save & display) images
@@ -251,7 +242,7 @@ def mean_fluorescences(tif_path, img_storage_path="", display=False, pickle_path
     crops = grid_crop(tif_blurred, num_timesteps)
     ctrl_imgs = crops[:, 0, 0]
     threshold = compute_noise_threshold(ctrl_imgs, display)
-    # to check: crops AND noise threshold look good
+    # Checks that the crop and noise threshold look good when combined
     if should_log:
         # Pick a random image
         idx = np.random.randint(0, num_timesteps)
@@ -259,7 +250,7 @@ def mean_fluorescences(tif_path, img_storage_path="", display=False, pickle_path
         img = tif_blurred[idx, :, :]
         croplines_img = visualize_grid_crop(img, threshold)
         # re-format the image so that it has the corrects dim'ns
-        # (channels, height, width)
+        # (channels, height, width); for being saved
         croplines_img_toSave = torch.from_numpy(
             croplines_img.astype(np.float32)
         ).permute(2, 0, 1)
@@ -283,15 +274,46 @@ def mean_fluorescences(tif_path, img_storage_path="", display=False, pickle_path
         if display:
             np_img = plt.imread(img_storage_path + "full_mask.png")
             plt.imshow(np_img)
-    # validate the (un)squeezing is necessary
+    # TODO: validate the (un)squeezing is necessary
     crops_masked = crops * mask.unsqueeze(0)
     crops_masked = crops_masked[0, :, :, :, :, :]
     if display:
         display_n_crops(crops_masked, 5)
+    if pickle_path != "":
+        torch.save(crops_masked, pickle_path)
+    return crops_masked
+
+
+def upscale(img, factor=2, blurred=True):
+    """
+    Upscale an image by a given factor
+    I.e. a 2x2 image will become a 2n x 2n image,
+    where n is the factor
+    """
+    if blurred:
+        img_re_dimd = img.unsqueeze(0)
+    else:
+        img_re_dimd = torch.from_numpy(img.astype(np.float32)).unsqueeze(0)
+    upscaled = F.interpolate(
+        img_re_dimd, scale_factor=factor, mode="bilinear", align_corners=True
+    )[0]
+    return upscaled
+
+
+def mean_fluorescences_by_crop(
+    const, tif_path, img_storage_path="", display=False, pickle_path=""
+):
+    crops_masked = clean_mask_n_crop(
+        const, tif_path, img_storage_path, display, pickle_path=pickle_path
+    )
     mean_fluorescences = torch.mean(crops_masked, dim=(3, 4))
     if pickle_path != "":
-        torch.save(mean_fluorescences, pickle_path)
+        torch.save(mean_fluorescences, pickle_path + "_mean_fluorescences")
     return mean_fluorescences
+
+
+def mean_fluorescences_by_pixel():
+    return
 
 
 def load_strain_names(
@@ -322,7 +344,7 @@ def load_strain_names(
     return WTs, plate_layout_df
 
 
-def reassemble_crops(crops, num_timesteps):
+def reassemble_crops(const, crops, num_timesteps):
     """
     Re-assemble the crops into a single image
     """
@@ -340,43 +362,9 @@ def reassemble_crops(crops, num_timesteps):
                 i * const.CELL_WIDTH_X : (i + 1) * const.CELL_WIDTH_X,
                 j * const.CELL_WIDTH_Y : (j + 1) * const.CELL_WIDTH_Y,
             ] = crops[:, i, j]
-    """
-    dims = [NUM_ROWS * CELL_WIDTH_X, NUM_COLUMNS * CELL_WIDTH_Y]
-    big = torch.zeros(dims)
-    for i in range(NUM_ROWS):
-        for j in range(NUM_COLUMNS):
-            start_x = i * CELL_WIDTH_X
-            end_x = (i + 1) * CELL_WIDTH_X
-            start_y = j* CELL_WIDTH_Y
-            end_y = (j+1)* CELL_WIDTH_Y
-
-            big[start_x:end_x, start_y:end_y] 
-    """
     return img
 
 
-# TODO - merge all the inferred params into one dataframe(?)
-# TODO - account for missing timepoints
-def old_join_strain_IDs_w_param_data(param_data, param_name, strain_IDs, WT_set):
-    merged_df = pd.DataFrame(columns=["strain", param_name, "WT"])
-    for i in range(const.NUM_ROWS):
-        for j in range(const.NUM_COLUMNS):
-            strain_name = strain_IDs.iloc[i, j]
-            if strain_name in WT_set:
-                WT = True
-            else:
-                WT = False
-            values = param_data[:, i, j].numpy()
-            new_row = pd.DataFrame(
-                {"strain": strain_name, param_name: [values], "WT": WT}
-            )
-            merged_df = pd.concat([merged_df, new_row], ignore_index=True)
-    return merged_df
-
-
-# problem here is that strains will sometimes have the same name so
-# I am dis-aggregating the well-specific data into triplicate strain-specific data
-# (though this is probably ok for now)
 def join_strain_IDs_w_param_data(param_data, param_name, strain_IDs, WT_set):
     merged_df = pd.DataFrame(
         columns=["strain", param_name, "WT", "time", "strain_replicate"]

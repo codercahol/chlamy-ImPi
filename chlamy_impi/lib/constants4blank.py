@@ -2,6 +2,8 @@ import numpy as np
 
 # save as a config pickle dynamically whenever it's used for an image with the image name tagged
 
+## DEPRECATED!!
+
 # blank controls -- structure into new object
 NUM_ROWS = 16
 NUM_COLUMNS = 24
@@ -16,14 +18,3 @@ Y_MIN = 35 * 2
 # when this is not integer, every other cell has more pixels
 CELL_WIDTH_Y = 43  # 22 is the right width, with 2x upscaling -> 43
 Y_MAX = Y_MIN + NUM_COLUMNS * CELL_WIDTH_Y
-
-# upsample images to avoid half-pixel problem
-# controls with light on vs off
-# use Adrians old WT data to compare LED exposed to edge strains
-## (( investive seg anything model))
-
-# ant:
-# - plan abx induction plasmid
-# - run simple Flux parity model
-# - write up some stuff?
-# - find bacteroides metatranscriptomics data -- ask Sophie
