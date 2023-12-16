@@ -12,48 +12,24 @@ import torch
 import torch.nn.functional as F
 # import torchvision.transforms as transforms
 from torchvision.utils import save_image
-from skimage import io
 from lib import utils
 from lib import data_processing as ip
 from lib.constants import Config
 import lib.inference as inf
 from loguru import logger
-
-
-"""
-TODO:
-- document how the quirky images differ from the HT screen ones
-"""
-
 # %% Load Constants
 
 C = Config()
 
 # %% Load the Image
 
-# ctrl_img_path = "../data/Fluc light CC125.tif"
-# ctrl_img_path_2 = "../data/20230918 plate positions test.tif"
-# og code for this data set (was) in light_cuvre.demo.py
-light_curve = "../data/20230920 light curve 384 wtf.tif"
-blank_calib = "../data/blank dark light dark new calibration.tif"
-WT_calib = "../data/WT dark light dark new calibration.tif"
-# "../data/20230323 3h-3h Y(II).tif"
+img_path = "../data/20230323 3h-3h Y(II).tif"
 
-img_path = WT_calib
-# 0-4 are static
-# 5-19 are one plate
-# 20-30 are another plate
-# plate was taken out and put back in for each measurement
-
-# assume for now that I always get 4 more images than explicitly planned on camera script:
-# one pair is F0 and Fm
-# the other pair are duds that immediately follow
-
-tif = io.imread(img_path)  # open tiff file in read mode
+tif = utils.load_image(img_path)
 # %% Filter out failed photos
 
 tif, _ = ip.remove_failed_photos(tif)
-# TODO - account for extra time due to missing images
+# TODO - account for extra time due to missing images?
 
 # %% Apply a Gaussian filter to remove sensor noise
 tif_blurred = ip.gaussian_blur(tif, kernel_size = 3, sigma = 1)

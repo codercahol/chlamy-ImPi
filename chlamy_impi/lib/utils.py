@@ -2,6 +2,7 @@ import pickle
 from pathlib import Path
 import numpy as np
 import pandas as pd
+from skimage import io
 
 
 def to_pickle(obj, path):
