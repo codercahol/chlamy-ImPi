@@ -12,6 +12,9 @@ from torchvision.utils import save_image
 import openpyxl as xl
 import pandas as pd
 
+# TODO - this file is getting too long
+# -- break up into multiple files?
+
 
 def remove_failed_photos(tif):
     """
@@ -25,6 +28,9 @@ def remove_failed_photos(tif):
     """
     max_per_timestep = tif.max(1).max(1)
     keep_image = max_per_timestep > 0
+    logger.info(
+        f"Discarding {sum(~keep_image)} images (indices {list(np.argwhere(~keep_image))}) which are all black"
+    )
     photo_index = np.arange(len(keep_image))[keep_image]
     tif = tif[keep_image]
     return tif, photo_index
@@ -119,7 +125,17 @@ def generate_grid_crop_coordinates(const):
     return a, b
 
 
-def visualize_grid_crop(img, threshold=35):
+def visualize_grid_crop(*args, **kwargs):
+    # HACK - this should be removed once the two methods are consolidated
+    if len(args) == 1:
+        old_visualize_grid_crop(*args, **kwargs)
+    elif len(args) == 6:
+        new_visualise_grid_crop(*args, **kwargs)
+    else:
+        return TypeError("Number of arguments didn't match either method")
+
+
+def old_visualize_grid_crop(img, threshold=35):
     """
     Visualize the grid crop
     """
@@ -139,6 +155,125 @@ def visualize_grid_crop(img, threshold=35):
             pts2 = (b[i + 1, j + 1].item(), a[i + 1, j + 1].item())
             draw_mark(input_img, pts, pts2, color=_GREEN)
     return input_img
+
+
+def new_visualise_grid_crop(
+    tif, img_array, i_vals, j_vals, well_coords, savedir, max_channels=5
+):
+    # This function needs more comments
+    """
+    Input:
+        tif: torch tensor of shape (num_images, height, width)
+        img_array: torch tensor of shape
+            (num_timesteps, num_rows, num_columns, height, width)
+        i_vals: the row indices of the grid crop?
+        j_vals: the column indices of the grid crop?
+        well_coords: the coordinates of the wells?
+        savedir: the directory to save the plots in
+        max_channels: the maximum number of channels to plot
+    Output:
+        None (saves plots to savedir)
+    """
+    logger.debug(f"Saving plots of grid crop in {savedir}")
+    savedir.mkdir(parents=True, exist_ok=True)
+
+    img_shape = tif.shape
+    array_shape = img_array.shape
+
+    iv, jv = np.meshgrid(i_vals, j_vals, indexing="ij")
+    iv2, jv2 = np.meshgrid(i_vals, j_vals, indexing="xy")
+
+    for channel in range(min(img_shape[0], max_channels)):
+        fig, ax = plt.subplots(1, 1, figsize=(10, 8))
+        ax.imshow(tif[channel, :, :])
+        # Draw well centre coords
+        ax.scatter(
+            list(zip(*well_coords))[1],
+            list(zip(*well_coords))[0],
+            color="red",
+            marker="x",
+            s=2,
+        )
+        # Draw grid
+        ax.plot(jv, iv, color="red")
+        ax.plot(jv2, iv2, color="red")
+        fig.savefig(savedir / f"{channel}_grid.png")
+        fig.clf()
+        plt.close(fig)
+
+        fig, axs = plt.subplots(array_shape[0], array_shape[1])
+        for i, j in itertools.product(range(array_shape[0]), range(array_shape[1])):
+            ax = axs[i, j]
+            ax.axis("off")
+            ax.imshow(
+                img_array[i, j, channel],
+                vmin=tif[channel].min(),
+                vmax=tif[channel].max(),
+            )
+        fig.savefig(savedir / f"{channel}_subimage_array.png")
+        fig.clf()
+        plt.close(fig)
+
+
+def visualise_channels(tif, savedir, max_channels=None):
+    logger.debug(f"Writing out plots of all time points in {savedir}")
+
+    savedir.mkdir(parents=True, exist_ok=True)
+
+    shape = tif.shape
+
+    if max_channels is None:
+        max_channels = shape[0]
+
+    for channel in range(min(shape[0], max_channels)):
+        fig, ax = plt.subplots(1, 1)
+        ax.imshow(tif[channel, :, :])
+        fig.savefig(savedir / f"{channel}.png")
+        fig.clf()
+        plt.close(fig)
+
+    fig, ax = plt.subplots(1, 1)
+    ax.imshow(np.mean(tif, axis=0))
+    fig.savefig(savedir / f"avg.png")
+    fig.clf()
+    plt.close(fig)
+
+
+# TODO - check it works with the way I've been handling files
+def validate_well_mask_array(mask_array) -> int:
+    """Perform some checks on the well masks.
+
+    Returns the number of well masks which overlap with the boundary of the sub-image of the well.
+    """
+    array_shape = mask_array.shape
+    arr = np.zeros_like(mask_array[:, :, 0, 0])
+
+    for i, j in itertools.product(range(array_shape[0]), range(array_shape[1])):
+        if has_true_on_boundary(mask_array[i, j]):
+            logger.warning(f"Mask {i},{j} has hit boundary")
+            arr[i, j] = True
+
+    num_overlapping = np.sum(arr)
+
+    # assert num_overlapping <= 3, f"We have found overlapping masks for {num_overlapping} masks"
+    logger.info(f"We have found overlapping masks for {num_overlapping} masks")
+
+    return num_overlapping
+
+
+# TODO - check it works with the way I've been handling files
+def has_true_on_boundary(arr):
+    """Check if mask reaches edge of cell - should always be false"""
+
+    # Check the top and bottom rows
+    if np.any(arr[0, :]) or np.any(arr[-1, :]):
+        return True
+
+    # Check the left and right columns
+    if np.any(arr[:, 0]) or np.any(arr[:, -1]):
+        return True
+
+    return False
 
 
 def grid_crop(const, img, num_timesteps):
@@ -186,6 +321,76 @@ def disk_mask(const, radius_fraction=4 / 5):
     return sphere
 
 
+# TODO - keep this or disk_mask?
+def get_disk_mask(img_array):
+    disk_radius = min(img_array.shape[-2:]) // 2
+    disk_mask = morphology.disk(radius=disk_radius, dtype=bool)
+    if disk_mask.shape[0] > img_array.shape[3]:
+        assert (
+            img_array.shape[3] == img_array.shape[4]
+        )  # Check assumption of square cells
+        disk_mask = disk_mask[:-1, :-1]
+    assert disk_mask.shape == img_array.shape[-2:]
+    return disk_mask
+
+
+# TODO - integrate
+def visualise_mask_array(mask_array, savedir):
+    logger.debug(f"Writing out plot of masks to {savedir}")
+    savedir.mkdir(parents=True, exist_ok=True)
+
+    array_shape = mask_array.shape
+
+    fig, axs = plt.subplots(array_shape[0], array_shape[1])
+    for i, j in itertools.product(range(array_shape[0]), range(array_shape[1])):
+        ax = axs[i, j]
+        ax.axis("off")
+        ax.imshow(mask_array[i, j])
+    fig.savefig(savedir / "mask_array.png")
+    fig.clf()
+    plt.close(fig)
+
+
+# TODO - integrate
+def count_empty_wells(mask_array):
+    """
+    Estimate the error due to misplating, which results in wells with no growing cells.
+
+    Input:
+        mask_array: 4D numpy array of shape (num_rows, num_columns, height, width)
+        num_blanks: number of blanks in the plate
+    """
+    mask_array_flat_im = mask_array.reshape(mask_array.shape[:2] + (-1,))
+    total_wells = mask_array.shape[0] * mask_array.shape[1]
+    num_good_wells = np.sum(np.max(mask_array_flat_im, axis=-1))
+    empty_wells = total_wells - num_good_wells
+    return empty_wells, total_wells
+
+
+# TODO - integrate
+def save_mean_array(mean_fluor_array, name):
+    outfile = OUTPUT_DIR / "mean_arrays" / f"{name}.npy"
+    outfile.parent.mkdir(parents=True, exist_ok=True)
+    np.save(outfile, mean_fluor_array)
+    logger.info(f"Mean fluorescence array saved out to: {outfile}")
+
+    # Also save as csv to be read using pandas
+    rows = []
+    for i, j in itertools.product(
+        range(mean_fluor_array.shape[0]), range(mean_fluor_array.shape[1])
+    ):
+        col_to_val = {
+            f"mean_fluorescence_frame_{k}": mean_fluor_array[i, j, k]
+            for k in range(mean_fluor_array.shape[2])
+        }
+        col_to_val.update({"row": i, "col": j})
+        rows.append(col_to_val)
+    df = pd.DataFrame(rows)
+    outfile = OUTPUT_DIR / "mean_arrays" / f"{name}.csv"
+    df.to_csv(outfile)
+    logger.info(f"Mean fluorescence array saved out to: {outfile}")
+
+
 def compute_noise_threshold(ctrl_imgs, subset_idxs=None, display=False, n_stdDevs=5):
     if subset_idxs is not None:
         ctrl_imgs = ctrl_imgs[subset_idxs]
@@ -194,7 +399,7 @@ def compute_noise_threshold(ctrl_imgs, subset_idxs=None, display=False, n_stdDev
     mean = ctrl_imgs.mean()
     std = ctrl_imgs.std()
     THRESHOLD = mean + n_stdDevs * std
-    logger.debug(f"mean : {mean}, std {std}, threshold {THRESHOLD}")
+    logger.debug(f"Noise threshold mean : {mean}, std: {std}. Threshold: {THRESHOLD}")
     return THRESHOLD
 
 
