@@ -9,3 +9,4 @@ The contents of the different files are as follows:
 - "20230920 light curve 384 wtf.tif": Light curve using wild type F. Light curve means that we didn't exactly get the normal Fv/Fm photos. I think the light intensity increases gradually with each pair of photos(?)
 - "20230915 15min-15min BLANK TEST.tif": A blank test to calibrate the amount of reflected/background light
 - "blank dark light dark new calibration.tif": Another blank for calibration, I don't remember exactly how it was different
+- "WT dark light dark new calibration.tif": A plate full of WTF for calibration, I don't remember exactly how it was different

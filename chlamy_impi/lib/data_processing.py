@@ -1,14 +1,9 @@
 import numpy as np
-import torch
-import torchvision
 from loguru import logger
 import matplotlib.pyplot as plt
-import cv2
-from skimage import io
-import torch.nn.functional as F
+import itertools
 
 from lib import utils
-from torchvision.utils import save_image
 import openpyxl as xl
 import pandas as pd
 
@@ -135,6 +130,7 @@ def visualize_grid_crop(*args, **kwargs):
         return TypeError("Number of arguments didn't match either method")
 
 
+# DEPRECATED - remove
 def old_visualize_grid_crop(img, threshold=35):
     """
     Visualize the grid crop
@@ -304,37 +300,41 @@ def grid_crop(const, img, num_timesteps):
     return crops
 
 
-def disk_mask(const, radius_fraction=4 / 5):
+def disk_mask(img_array, radius_fraction=4 / 5):
     """
     Create a disk-like mask
     """
-    sphere = torch.zeros(size=(const.CELL_WIDTH_X, const.CELL_WIDTH_Y))
-    smaller_diameter = min(const.CELL_WIDTH_X, const.CELL_WIDTH_Y)
-    for i in range(sphere.shape[0]):
-        for j in range(sphere.shape[1]):
+    crop_dims = img_array.shape[-2:]
+    CELL_WIDTH_X = crop_dims[0]
+    CELL_WIDTH_Y = crop_dims[1]
+    smaller_diameter = min(crop_dims)
+    max_disk_radius = smaller_diameter // 2
+    disk_radius = int(radius_fraction * max_disk_radius)
+    mask = np.zeros((CELL_WIDTH_X, CELL_WIDTH_Y), dtype=bool)
+    for i in range(CELL_WIDTH_X):
+        for j in range(CELL_WIDTH_Y):
             # formula for a circle centered at the center of the rectangle
             # with the given dimensions
-            if (i - const.CELL_WIDTH_X / 2) ** 2 + (j - const.CELL_WIDTH_Y / 2) ** 2 < (
-                radius_fraction * smaller_diameter / 2
+            if (i - CELL_WIDTH_X / 2) ** 2 + (j - CELL_WIDTH_Y / 2) ** 2 < (
+                disk_radius
             ) ** 2:
-                sphere[i, j] = 1
-    return sphere
+                mask[i, j] = 1
+    return mask
 
 
-# TODO - keep this or disk_mask?
-def get_disk_mask(img_array):
-    disk_radius = min(img_array.shape[-2:]) // 2
-    disk_mask = morphology.disk(radius=disk_radius, dtype=bool)
-    if disk_mask.shape[0] > img_array.shape[3]:
-        assert (
-            img_array.shape[3] == img_array.shape[4]
-        )  # Check assumption of square cells
-        disk_mask = disk_mask[:-1, :-1]
-    assert disk_mask.shape == img_array.shape[-2:]
-    return disk_mask
+def generate_mask(img_array, threshold, geometry_mask):
+    min_pixels = np.min(img_array, axis=2)
+    min_pixels = min_pixels[:, :, np.newaxis, :, :]
+
+    threshold_mask = min_pixels > threshold
+
+    geometry_mask = np.expand_dims(geometry_mask, axis=[0, 1, 2])
+    mask = threshold_mask * geometry_mask
+
+    return mask
 
 
-# TODO - integrate
+# TODO - review
 def visualise_mask_array(mask_array, savedir):
     logger.debug(f"Writing out plot of masks to {savedir}")
     savedir.mkdir(parents=True, exist_ok=True)
@@ -351,7 +351,7 @@ def visualise_mask_array(mask_array, savedir):
     plt.close(fig)
 
 
-# TODO - integrate
+# TODO - review
 def count_empty_wells(mask_array):
     """
     Estimate the error due to misplating, which results in wells with no growing cells.
@@ -367,7 +367,7 @@ def count_empty_wells(mask_array):
     return empty_wells, total_wells
 
 
-# TODO - integrate
+# TODO - review
 def save_mean_array(mean_fluor_array, name):
     outfile = OUTPUT_DIR / "mean_arrays" / f"{name}.npy"
     outfile.parent.mkdir(parents=True, exist_ok=True)
@@ -391,24 +391,24 @@ def save_mean_array(mean_fluor_array, name):
     logger.info(f"Mean fluorescence array saved out to: {outfile}")
 
 
-def compute_noise_threshold(ctrl_imgs, subset_idxs=None, display=False, n_stdDevs=5):
-    if subset_idxs is not None:
-        ctrl_imgs = ctrl_imgs[subset_idxs]
-    if display:
-        plt.imshow(ctrl_imgs[0])
-    mean = ctrl_imgs.mean()
-    std = ctrl_imgs.std()
-    THRESHOLD = mean + n_stdDevs * std
-    logger.debug(f"Noise threshold mean : {mean}, std: {std}. Threshold: {THRESHOLD}")
-    return THRESHOLD
-
-
-def log_hyperparameters(const, num_timesteps):
-    logger.debug(
-        "Hyperparameters\nNUM_TIMESTEPS: {}\nWidth (x,y): ({},{})".format(
-            num_timesteps, const.CELL_WIDTH_X, const.CELL_WIDTH_Y
-        )
+def estimate_noise_threshold(img_array, lighting="all", n_stdDevs=5):
+    NUM_TIMESTEPS = img_array.shape[0]
+    if lighting == "dark":
+        logger.info("Using DARK images to compute threshold")
+        subset_idxs = range(0, NUM_TIMESTEPS, 2)
+    elif lighting == "light":
+        logger.info("Using LIGHT images to compute threshold")
+        subset_idxs = range(1, NUM_TIMESTEPS, 2)
+    elif lighting == "all":
+        logger.info("Using ALL images to compute threshold")
+        subset_idxs = range(0, NUM_TIMESTEPS)
+    mean = img_array[0, 0, subset_idxs].mean()
+    std = img_array[0, 0, subset_idxs].std()
+    threshold = mean + n_stdDevs * std
+    logger.info(
+        f"Computed threshold using blank control. mean : {mean}, std {std}, threshold {threshold}"
     )
+    return threshold
 
 
 def normalize(img):
@@ -416,105 +416,6 @@ def normalize(img):
     Normalize an image to the range [0, 1]
     """
     return (img - img.min()) / (img.max() - img.min())
-
-
-def convert_to_3channel_img(twoD_img):
-    """
-    Convert a 2D image (height, width) to a 3D image (channels, H, W)
-    with 3 channels (RGB)
-    """
-    threeD_img = twoD_img.unsqueeze(0).repeat(3, 1, 1)
-    return threeD_img
-
-
-def clean_mask_n_crop(
-    const, tif_path, img_storage_path="", display=False, pickle_path=""
-):
-    if img_storage_path == "" and display:
-        raise ValueError(
-            "Images must be saved in order to be displayed. "
-            + "Please enter a path for the images to be saved."
-        )
-    # logging will either (save) or (save & display) images
-    should_log = img_storage_path != "" or display
-    tif = io.imread(tif_path)
-    tif, _ = remove_failed_photos(tif)
-    tif_blurred = gaussian_blur(tif, 3, 1)
-    if display:
-        display_n(tif_blurred, 3)
-    num_timesteps = tif.shape[0]
-    log_hyperparameters(num_timesteps)
-    crops = grid_crop(tif_blurred, num_timesteps)
-    ctrl_imgs = crops[:, 0, 0]
-    threshold = compute_noise_threshold(ctrl_imgs, display)
-    # Checks that the crop and noise threshold look good when combined
-    if should_log:
-        # Pick a random image
-        idx = np.random.randint(0, num_timesteps)
-        logger.debug("Randomly chosen index: {}".format(idx))
-        img = tif_blurred[idx, :, :]
-        croplines_img = visualize_grid_crop(img, threshold)
-        # re-format the image so that it has the corrects dim'ns
-        # (channels, height, width); for being saved
-        croplines_img_toSave = torch.from_numpy(
-            croplines_img.astype(np.float32)
-        ).permute(2, 0, 1)
-        save_image(
-            convert_to_3channel_img(normalize(img)), img_storage_path + "input_img.png"
-        )
-        save_image(croplines_img_toSave, img_storage_path + "gridlines_n_threshold.png")
-        if display:
-            plt.imshow(img)
-            plt.imshow(croplines_img)
-    # uses the same threshold as for the logged images
-    noise_mask = crops.min(0)[0] > threshold
-    shape_mask = disk_mask(const.CELL_WIDTH_X, const.CELL_WIDTH_Y)
-    mask = noise_mask * shape_mask.unsqueeze(0).unsqueeze(0).unsqueeze(0)
-    if should_log:
-        # manipulate shape of tensor to be (num_crops, 1, height, width); as before
-        mask_toSave = mask.float().view(-1, mask.shape[3], mask.shape[4]).unsqueeze(1)
-        save_image(
-            mask_toSave, img_storage_path + "full_mask.png", nrow=const.NUM_COLUMNS
-        )
-        if display:
-            np_img = plt.imread(img_storage_path + "full_mask.png")
-            plt.imshow(np_img)
-    # TODO: validate the (un)squeezing is necessary
-    crops_masked = crops * mask.unsqueeze(0)
-    crops_masked = crops_masked[0, :, :, :, :, :]
-    if display:
-        display_n_crops(crops_masked, 5)
-    if pickle_path != "":
-        torch.save(crops_masked, pickle_path)
-    return crops_masked
-
-
-def upscale(img, factor=2, blurred=True):
-    """
-    Upscale an image by a given factor
-    I.e. a 2x2 image will become a 2n x 2n image,
-    where n is the factor
-    """
-    if blurred:
-        img_re_dimd = img.unsqueeze(0)
-    else:
-        img_re_dimd = torch.from_numpy(img.astype(np.float32)).unsqueeze(0)
-    upscaled = F.interpolate(
-        img_re_dimd, scale_factor=factor, mode="bilinear", align_corners=True
-    )[0]
-    return upscaled
-
-
-def mean_fluorescences_by_crop(
-    const, tif_path, img_storage_path="", display=False, pickle_path=""
-):
-    crops_masked = clean_mask_n_crop(
-        const, tif_path, img_storage_path, display, pickle_path=pickle_path
-    )
-    mean_fluorescences = torch.mean(crops_masked, dim=(3, 4))
-    if pickle_path != "":
-        torch.save(mean_fluorescences, pickle_path + "_mean_fluorescences")
-    return mean_fluorescences
 
 
 def mean_fluorescences_by_pixel():

@@ -26,8 +26,8 @@ logging.getLogger("matplotlib").setLevel(logging.WARNING)
 
 
 # For now, input and output dir hard-coded here
-INPUT_DIR = Path("../data")
-OUTPUT_DIR = Path("../output/image_processing/v3")
+INPUT_DIR = Path("./data")
+OUTPUT_DIR = Path("./output/image_processing/v3")
 USE_MULTIPROCESSING = False
 OUTPUT_VISUALISATIONS = True
 LOGGING_LEVEL = logging.DEBUG
