@@ -1,17 +1,14 @@
 import numpy as np
-import torch
-import torchvision
 from loguru import logger
 import matplotlib.pyplot as plt
-import cv2
-from skimage import io
+import itertools
 
-# from lib import constants as const
-from lib import constants4blank as const
 from lib import utils
-from torchvision.utils import save_image
 import openpyxl as xl
 import pandas as pd
+
+# TODO - this file is getting too long
+# -- break up into multiple files?
 
 
 def remove_failed_photos(tif):
@@ -26,6 +23,9 @@ def remove_failed_photos(tif):
     """
     max_per_timestep = tif.max(1).max(1)
     keep_image = max_per_timestep > 0
+    logger.info(
+        f"Discarding {sum(~keep_image)} images (indices {list(np.argwhere(~keep_image))}) which are all black"
+    )
     photo_index = np.arange(len(keep_image))[keep_image]
     tif = tif[keep_image]
     return tif, photo_index
@@ -91,11 +91,7 @@ def display_n_crops(crops, n):
         plt.show()
 
 
-_GOLD = (255, 127, 127)
-_GREEN = (0, 127, 0)
-
-
-def draw_mark(cv_src, pts, pts2, color=_GOLD):
+def draw_mark(cv_src, pts, pts2):
     """
     Draws rectangles on an image
     Input:
@@ -106,10 +102,11 @@ def draw_mark(cv_src, pts, pts2, color=_GOLD):
     Output:
         None (modifies the input image)
     """
+    _GOLD = (255, 127, 127)
     cv2.rectangle(cv_src, pts, pts2, color=_GOLD, thickness=1)
 
 
-def generate_grid_crop_coordinates():
+def generate_grid_crop_coordinates(const):
     """
     Generate the coordinates for the grid crop
     """
@@ -123,7 +120,18 @@ def generate_grid_crop_coordinates():
     return a, b
 
 
-def visualize_grid_crop(img, threshold=35):
+def visualize_grid_crop(*args, **kwargs):
+    # HACK - this should be removed once the two methods are consolidated
+    if len(args) == 1:
+        old_visualize_grid_crop(*args, **kwargs)
+    elif len(args) == 6:
+        new_visualise_grid_crop(*args, **kwargs)
+    else:
+        return TypeError("Number of arguments didn't match either method")
+
+
+# DEPRECATED - remove
+def old_visualize_grid_crop(img, threshold=35):
     """
     Visualize the grid crop
     """
@@ -145,7 +153,126 @@ def visualize_grid_crop(img, threshold=35):
     return input_img
 
 
-def grid_crop(img, num_timesteps):
+def new_visualise_grid_crop(
+    tif, img_array, i_vals, j_vals, well_coords, savedir, max_channels=5
+):
+    # This function needs more comments
+    """
+    Input:
+        tif: torch tensor of shape (num_images, height, width)
+        img_array: torch tensor of shape
+            (num_timesteps, num_rows, num_columns, height, width)
+        i_vals: the row indices of the grid crop?
+        j_vals: the column indices of the grid crop?
+        well_coords: the coordinates of the wells?
+        savedir: the directory to save the plots in
+        max_channels: the maximum number of channels to plot
+    Output:
+        None (saves plots to savedir)
+    """
+    logger.debug(f"Saving plots of grid crop in {savedir}")
+    savedir.mkdir(parents=True, exist_ok=True)
+
+    img_shape = tif.shape
+    array_shape = img_array.shape
+
+    iv, jv = np.meshgrid(i_vals, j_vals, indexing="ij")
+    iv2, jv2 = np.meshgrid(i_vals, j_vals, indexing="xy")
+
+    for channel in range(min(img_shape[0], max_channels)):
+        fig, ax = plt.subplots(1, 1, figsize=(10, 8))
+        ax.imshow(tif[channel, :, :])
+        # Draw well centre coords
+        ax.scatter(
+            list(zip(*well_coords))[1],
+            list(zip(*well_coords))[0],
+            color="red",
+            marker="x",
+            s=2,
+        )
+        # Draw grid
+        ax.plot(jv, iv, color="red")
+        ax.plot(jv2, iv2, color="red")
+        fig.savefig(savedir / f"{channel}_grid.png")
+        fig.clf()
+        plt.close(fig)
+
+        fig, axs = plt.subplots(array_shape[0], array_shape[1])
+        for i, j in itertools.product(range(array_shape[0]), range(array_shape[1])):
+            ax = axs[i, j]
+            ax.axis("off")
+            ax.imshow(
+                img_array[i, j, channel],
+                vmin=tif[channel].min(),
+                vmax=tif[channel].max(),
+            )
+        fig.savefig(savedir / f"{channel}_subimage_array.png")
+        fig.clf()
+        plt.close(fig)
+
+
+def visualise_channels(tif, savedir, max_channels=None):
+    logger.debug(f"Writing out plots of all time points in {savedir}")
+
+    savedir.mkdir(parents=True, exist_ok=True)
+
+    shape = tif.shape
+
+    if max_channels is None:
+        max_channels = shape[0]
+
+    for channel in range(min(shape[0], max_channels)):
+        fig, ax = plt.subplots(1, 1)
+        ax.imshow(tif[channel, :, :])
+        fig.savefig(savedir / f"{channel}.png")
+        fig.clf()
+        plt.close(fig)
+
+    fig, ax = plt.subplots(1, 1)
+    ax.imshow(np.mean(tif, axis=0))
+    fig.savefig(savedir / f"avg.png")
+    fig.clf()
+    plt.close(fig)
+
+
+# TODO - check it works with the way I've been handling files
+def validate_well_mask_array(mask_array) -> int:
+    """Perform some checks on the well masks.
+
+    Returns the number of well masks which overlap with the boundary of the sub-image of the well.
+    """
+    array_shape = mask_array.shape
+    arr = np.zeros_like(mask_array[:, :, 0, 0])
+
+    for i, j in itertools.product(range(array_shape[0]), range(array_shape[1])):
+        if has_true_on_boundary(mask_array[i, j]):
+            logger.warning(f"Mask {i},{j} has hit boundary")
+            arr[i, j] = True
+
+    num_overlapping = np.sum(arr)
+
+    # assert num_overlapping <= 3, f"We have found overlapping masks for {num_overlapping} masks"
+    logger.info(f"We have found overlapping masks for {num_overlapping} masks")
+
+    return num_overlapping
+
+
+# TODO - check it works with the way I've been handling files
+def has_true_on_boundary(arr):
+    """Check if mask reaches edge of cell - should always be false"""
+
+    # Check the top and bottom rows
+    if np.any(arr[0, :]) or np.any(arr[-1, :]):
+        return True
+
+    # Check the left and right columns
+    if np.any(arr[:, 0]) or np.any(arr[:, -1]):
+        return True
+
+    return False
+
+
+def grid_crop(const, img, num_timesteps):
     x = torch.round(torch.linspace(const.X_MIN, const.X_MAX, const.NUM_ROWS + 1)).to(
         torch.int16
     )
@@ -173,46 +300,115 @@ def grid_crop(img, num_timesteps):
     return crops
 
 
-def disk_mask(width_x, width_y, radius_fraction=4 / 5):
+def disk_mask(img_array, radius_fraction=4 / 5):
     """
     Create a disk-like mask
     """
-    # Co-Pilot's suggestion
-    # x = torch.linspace(-width_x, width_x, 2 * width_x + 1)
-    # y = torch.linspace(-width_y, width_y, 2 * width_y + 1)
-    # a, b = torch.meshgrid(x, y)
-    # sphere = (a ** 2 + b ** 2) <= (width_x ** 2 + width_y ** 2)
-    sphere = torch.zeros(size=(const.CELL_WIDTH_X, const.CELL_WIDTH_Y))
-    smaller_diameter = min(const.CELL_WIDTH_X, const.CELL_WIDTH_Y)
-    for i in range(sphere.shape[0]):
-        for j in range(sphere.shape[1]):
+    crop_dims = img_array.shape[-2:]
+    CELL_WIDTH_X = crop_dims[0]
+    CELL_WIDTH_Y = crop_dims[1]
+    smaller_diameter = min(crop_dims)
+    max_disk_radius = smaller_diameter // 2
+    disk_radius = int(radius_fraction * max_disk_radius)
+    mask = np.zeros((CELL_WIDTH_X, CELL_WIDTH_Y), dtype=bool)
+    for i in range(CELL_WIDTH_X):
+        for j in range(CELL_WIDTH_Y):
             # formula for a circle centered at the center of the rectangle
             # with the given dimensions
-            if (i - const.CELL_WIDTH_X / 2) ** 2 + (j - const.CELL_WIDTH_Y / 2) ** 2 < (
-                radius_fraction * smaller_diameter / 2
+            if (i - CELL_WIDTH_X / 2) ** 2 + (j - CELL_WIDTH_Y / 2) ** 2 < (
+                disk_radius
             ) ** 2:
-                sphere[i, j] = 1
-    return sphere
+                mask[i, j] = 1
+    return mask
 
 
-def compute_noise_threshold(ctrl_imgs, subset_idxs=None, display=False, n_stdDevs=5):
-    if subset_idxs is not None:
-        ctrl_imgs = ctrl_imgs[subset_idxs]
-    if display:
-        plt.imshow(ctrl_imgs[0])
-    mean = ctrl_imgs.mean()
-    std = ctrl_imgs.std()
-    THRESHOLD = mean + n_stdDevs * std
-    logger.debug(f"mean : {mean}, std {std}, threshold {THRESHOLD}")
-    return THRESHOLD
+def generate_mask(img_array, threshold, geometry_mask):
+    min_pixels = np.min(img_array, axis=2)
+    min_pixels = min_pixels[:, :, np.newaxis, :, :]
+
+    threshold_mask = min_pixels > threshold
+
+    geometry_mask = np.expand_dims(geometry_mask, axis=[0, 1, 2])
+    mask = threshold_mask * geometry_mask
+
+    return mask
 
 
-def log_hyperparameters(num_timesteps):
-    logger.debug(
-        "Hyperparameters\nNUM_TIMESTEPS: {}\nWidth (x,y): ({},{})".format(
-            num_timesteps, const.CELL_WIDTH_X, const.CELL_WIDTH_Y
-        )
+# TODO - review
+def visualise_mask_array(mask_array, savedir):
+    logger.debug(f"Writing out plot of masks to {savedir}")
+    savedir.mkdir(parents=True, exist_ok=True)
+
+    array_shape = mask_array.shape
+
+    fig, axs = plt.subplots(array_shape[0], array_shape[1])
+    for i, j in itertools.product(range(array_shape[0]), range(array_shape[1])):
+        ax = axs[i, j]
+        ax.axis("off")
+        ax.imshow(mask_array[i, j])
+    fig.savefig(savedir / "mask_array.png")
+    fig.clf()
+    plt.close(fig)
+
+
+# TODO - review
+def count_empty_wells(mask_array):
+    """
+    Estimate the error due to misplating, which results in wells with no growing cells.
+
+    Input:
+        mask_array: 4D numpy array of shape (num_rows, num_columns, height, width)
+        num_blanks: number of blanks in the plate
+    """
+    mask_array_flat_im = mask_array.reshape(mask_array.shape[:2] + (-1,))
+    total_wells = mask_array.shape[0] * mask_array.shape[1]
+    num_good_wells = np.sum(np.max(mask_array_flat_im, axis=-1))
+    empty_wells = total_wells - num_good_wells
+    return empty_wells, total_wells
+
+
+# TODO - review
+def save_mean_array(mean_fluor_array, name):
+    outfile = OUTPUT_DIR / "mean_arrays" / f"{name}.npy"
+    outfile.parent.mkdir(parents=True, exist_ok=True)
+    np.save(outfile, mean_fluor_array)
+    logger.info(f"Mean fluorescence array saved out to: {outfile}")
+
+    # Also save as csv to be read using pandas
+    rows = []
+    for i, j in itertools.product(
+        range(mean_fluor_array.shape[0]), range(mean_fluor_array.shape[1])
+    ):
+        col_to_val = {
+            f"mean_fluorescence_frame_{k}": mean_fluor_array[i, j, k]
+            for k in range(mean_fluor_array.shape[2])
+        }
+        col_to_val.update({"row": i, "col": j})
+        rows.append(col_to_val)
+    df = pd.DataFrame(rows)
+    outfile = OUTPUT_DIR / "mean_arrays" / f"{name}.csv"
+    df.to_csv(outfile)
+    logger.info(f"Mean fluorescence array saved out to: {outfile}")
+
+
+def estimate_noise_threshold(img_array, lighting="all", n_stdDevs=5):
+    NUM_TIMESTEPS = img_array.shape[0]
+    if lighting == "dark":
+        logger.info("Using DARK images to compute threshold")
+        subset_idxs = range(0, NUM_TIMESTEPS, 2)
+    elif lighting == "light":
+        logger.info("Using LIGHT images to compute threshold")
+        subset_idxs = range(1, NUM_TIMESTEPS, 2)
+    elif lighting == "all":
+        logger.info("Using ALL images to compute threshold")
+        subset_idxs = range(0, NUM_TIMESTEPS)
+    mean = img_array[0, 0, subset_idxs].mean()
+    std = img_array[0, 0, subset_idxs].std()
+    threshold = mean + n_stdDevs * std
+    logger.info(
+        f"Computed threshold using blank control. mean : {mean}, std {std}, threshold {threshold}"
     )
+    return threshold
 
 
 def normalize(img):
@@ -222,76 +418,8 @@ def normalize(img):
     return (img - img.min()) / (img.max() - img.min())
 
 
-def convert_to_3channel_img(twoD_img):
-    """
-    Convert a 2D image (height, width) to a 3D image (channels, H, W)
-    with 3 channels (RGB)
-    """
-    threeD_img = twoD_img.unsqueeze(0).repeat(3, 1, 1)
-    return threeD_img
-
-
-# TODO - add high noise flag and compare to a control w/out noise reductions
-# TODO - compute # of empty crops
-def mean_fluorescences(tif_path, img_storage_path="", display=False, pickle_path=""):
-    if img_storage_path == "" and display:
-        raise ValueError(
-            "Images must be save in order to be displayed."
-            + "Please enter a path for the images to be saved."
-        )
-    # logging will either (save) or (save & display) images
-    should_log = img_storage_path != "" or display
-    tif = io.imread(tif_path)
-    tif, _ = remove_failed_photos(tif)
-    tif_blurred = gaussian_blur(tif, 3, 1)
-    if display:
-        display_n(tif_blurred, 3)
-    num_timesteps = tif.shape[0]
-    log_hyperparameters(num_timesteps)
-    crops = grid_crop(tif_blurred, num_timesteps)
-    ctrl_imgs = crops[:, 0, 0]
-    threshold = compute_noise_threshold(ctrl_imgs, display)
-    # to check: crops AND noise threshold look good
-    if should_log:
-        # Pick a random image
-        idx = np.random.randint(0, num_timesteps)
-        logger.debug("Randomly chosen index: {}".format(idx))
-        img = tif_blurred[idx, :, :]
-        croplines_img = visualize_grid_crop(img, threshold)
-        # re-format the image so that it has the corrects dim'ns
-        # (channels, height, width)
-        croplines_img_toSave = torch.from_numpy(
-            croplines_img.astype(np.float32)
-        ).permute(2, 0, 1)
-        save_image(
-            convert_to_3channel_img(normalize(img)), img_storage_path + "input_img.png"
-        )
-        save_image(croplines_img_toSave, img_storage_path + "gridlines_n_threshold.png")
-        if display:
-            plt.imshow(img)
-            plt.imshow(croplines_img)
-    # uses the same threshold as for the logged images
-    noise_mask = crops.min(0)[0] > threshold
-    shape_mask = disk_mask(const.CELL_WIDTH_X, const.CELL_WIDTH_Y)
-    mask = noise_mask * shape_mask.unsqueeze(0).unsqueeze(0).unsqueeze(0)
-    if should_log:
-        # manipulate shape of tensor to be (num_crops, 1, height, width); as before
-        mask_toSave = mask.float().view(-1, mask.shape[3], mask.shape[4]).unsqueeze(1)
-        save_image(
-            mask_toSave, img_storage_path + "full_mask.png", nrow=const.NUM_COLUMNS
-        )
-        if display:
-            np_img = plt.imread(img_storage_path + "full_mask.png")
-            plt.imshow(np_img)
-    # validate the (un)squeezing is necessary
-    crops_masked = crops * mask.unsqueeze(0)
-    crops_masked = crops_masked[0, :, :, :, :, :]
-    if display:
-        display_n_crops(crops_masked, 5)
-    mean_fluorescences = torch.mean(crops_masked, dim=(3, 4))
-    if pickle_path != "":
-        torch.save(mean_fluorescences, pickle_path)
-    return mean_fluorescences
+def mean_fluorescences_by_pixel():
+    return
 
 
 def load_strain_names(
@@ -322,7 +450,7 @@ def load_strain_names(
     return WTs, plate_layout_df
 
 
-def reassemble_crops(crops, num_timesteps):
+def reassemble_crops(const, crops, num_timesteps):
     """
     Re-assemble the crops into a single image
     """
@@ -340,43 +468,9 @@ def reassemble_crops(crops, num_timesteps):
                 i * const.CELL_WIDTH_X : (i + 1) * const.CELL_WIDTH_X,
                 j * const.CELL_WIDTH_Y : (j + 1) * const.CELL_WIDTH_Y,
             ] = crops[:, i, j]
-    """
-    dims = [NUM_ROWS * CELL_WIDTH_X, NUM_COLUMNS * CELL_WIDTH_Y]
-    big = torch.zeros(dims)
-    for i in range(NUM_ROWS):
-        for j in range(NUM_COLUMNS):
-            start_x = i * CELL_WIDTH_X
-            end_x = (i + 1) * CELL_WIDTH_X
-            start_y = j* CELL_WIDTH_Y
-            end_y = (j+1)* CELL_WIDTH_Y
-
-            big[start_x:end_x, start_y:end_y] 
-    """
     return img
 
 
-# TODO - merge all the inferred params into one dataframe(?)
-# TODO - account for missing timepoints
-def old_join_strain_IDs_w_param_data(param_data, param_name, strain_IDs, WT_set):
-    merged_df = pd.DataFrame(columns=["strain", param_name, "WT"])
-    for i in range(const.NUM_ROWS):
-        for j in range(const.NUM_COLUMNS):
-            strain_name = strain_IDs.iloc[i, j]
-            if strain_name in WT_set:
-                WT = True
-            else:
-                WT = False
-            values = param_data[:, i, j].numpy()
-            new_row = pd.DataFrame(
-                {"strain": strain_name, param_name: [values], "WT": WT}
-            )
-            merged_df = pd.concat([merged_df, new_row], ignore_index=True)
-    return merged_df
-
-
-# problem here is that strains will sometimes have the same name so
-# I am dis-aggregating the well-specific data into triplicate strain-specific data
-# (though this is probably ok for now)
 def join_strain_IDs_w_param_data(param_data, param_name, strain_IDs, WT_set):
     merged_df = pd.DataFrame(
         columns=["strain", param_name, "WT", "time", "strain_replicate"]

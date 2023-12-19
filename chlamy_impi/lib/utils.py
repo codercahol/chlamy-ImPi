@@ -1,6 +1,8 @@
 import pickle
 from pathlib import Path
 import numpy as np
+import pandas as pd
+from skimage import io
 
 
 def to_pickle(obj, path):
@@ -11,6 +13,41 @@ def to_pickle(obj, path):
 def from_pickle(path):
     with open(Path(path), "rb") as f:
         return pickle.load(f)
+
+
+def validate_inputs(INPUT_DIR: Path):
+    assert INPUT_DIR.exists()
+    assert len(list(INPUT_DIR.glob("*.tif"))) > 0
+
+
+def find_all_images(INPUT_DIR: Path) -> list:
+    return list(INPUT_DIR.glob("*.tif"))
+
+
+def load_image(filename):
+    # open tiff file in read mode
+    return io.imread(filename)
+
+
+def results_dir_path(name: str, OUTPUT_DIR: Path) -> Path:
+    savedir = OUTPUT_DIR / name
+    return savedir
+
+
+def plate_info_path(OUTPUT_DIR: Path):
+    return OUTPUT_DIR / "plate_info.csv"
+
+
+def load_plate_info(OUTPUT_DIR: Path) -> pd.DataFrame:
+    try:
+        df = pd.read_csv(plate_info_path(OUTPUT_DIR), index_col=0, header=0)
+        return df
+    except FileNotFoundError:
+        return pd.DataFrame()
+
+
+def write_plate_info(df: pd.DataFrame, OUTPUT_DIR: Path) -> None:
+    df.to_csv(plate_info_path(OUTPUT_DIR))
 
 
 def cartesian_to_linear_index(i, j, num_columns):
