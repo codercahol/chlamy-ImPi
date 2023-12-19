@@ -34,9 +34,6 @@ OUTPUT_VISUALISATIONS = True
 
 img_path = "../data/20231213 9-M5_2h-2h.tif"
 
-
-# %% new fangled way
-
 # %% find all images
 logger.info("\n" + "=" * 32 + "\nStarting image_processing.py...\n" + "=" * 32)
 utils.validate_inputs(INPUT_DIR)
