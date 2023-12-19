@@ -3,42 +3,14 @@ from pathlib import Path
 import logging
 
 import numpy as np
-import skimage.morphology
 from matplotlib import pyplot as plt
-from skimage import filters
-from tqdm import tqdm
+
+from chlamy_impi.lib.fv_fm_functions import compute_pixelwise_fv_fm
+from chlamy_impi.lib.mask_functions import compute_threshold, compute_mask
 
 logger = logging.getLogger(__name__)
 
 INPUT_DIR = Path("./../../output/image_processing/v6/img_array")
-
-
-def compute_threshold(arr):
-    """We assume that arr is a well image, corresponding to a blank well
-    """
-    assert len(arr.shape) == 3
-
-    t = np.mean(arr) + 2 * np.std(arr)
-
-    if t > 30:
-        logger.warning(f"Anomalous threshold - non blank well in position 0,0 ?")
-        raise ValueError
-
-    # print(np.sum(arr > t) / np.prod(arr.shape))  # Look at fraction of blank which is greater than threshold
-
-    return t
-
-
-def compute_mask(arr, t):
-    assert len(arr.shape) == 3
-
-    img_array_mins = np.mean(arr, axis=0)
-
-    mask_array = img_array_mins > t
-
-    mask_array = skimage.morphology.binary_opening(mask_array)  # Smooth mask and remove noise
-
-    return mask_array
 
 
 def plot_all_fv_fm(filename_to_fv_fm, group):
@@ -146,56 +118,34 @@ def main():
             assert abs(cntrl_0 - cntrl_1) < 10.0, f"0: {cntrl_0}, 1: {cntrl_1}"
 
             all_fv_fm = []
+            all_fv_fm_std = []
 
             for i in range(img_array.shape[0]):
                 for j in range(img_array.shape[1]):
                     arr_0 = img_array[i, j, 0]  # Corresponds to F0
                     arr_1 = img_array[i, j, 1]  # Corresponds to Fm
-
-                    # Smooth image before working with it
-                    arr_0 = filters.gaussian(arr_0, sigma=1, channel_axis=None)
-                    arr_1 = filters.gaussian(arr_1, sigma=1, channel_axis=None)
-
-                    assert arr_0.shape == (20, 20)
-
                     arr_mask = compute_mask(img_array[i, j], threshold)
 
-                    assert arr_mask.shape == arr_0.shape
-                    assert arr_mask.shape == arr_1.shape
-
                     if np.any(arr_mask):
-                        assert arr_mask.sum() >= 4
-
-                        f0_arr = arr_0[arr_mask] - cntrl_0
-                        fm_arr = arr_1[arr_mask] - cntrl_1
-                        fv_arr = fm_arr - f0_arr
-
-                        # Fv/Fm is suprisngly small - so Fv needs to get bigger - so f0 needs to get smaller
-                        # If Fm gets bigger, then 1 - f0 / fm also gets bigger - so fm needs to get bigger?
-
-                        #assert np.max(fv_arr / fm_arr) <= 1.0, f"fv: {fv_arr}\nfm: {fm_arr}\n fv/fm: {fv_arr/fm_arr}\n cntrl_0: {cntrl_1}\n cntrl_1: {cntrl_1}\n arr_0: {arr_0[arr_mask]}\n ij={i},{j}\nmask: {arr_mask}"
-                        #assert np.max(fv_arr / fm_arr) <= 1.0, f"{temp_plot(arr_0, arr_1, arr_mask)}"
-                        assert fv_arr.shape == f0_arr.shape
+                        fv_fm_arr = compute_pixelwise_fv_fm(arr_0, arr_1, arr_mask, cntrl_0, cntrl_1)
+                        fv_fm_std = np.std(fv_fm_arr)
+                        all_fv_fm_std.append(fv_fm_std)
                     else:
                         # Empty mask - set to 0
-                        fv_arr = 0
-                        fm_arr = 1
+                        fv_fm_arr = np.zeros_like(arr_0)
 
                     # Compute a pixel-wise mean here
-                    fv_fm = np.mean(fv_arr / fm_arr)
-
-                    logger.debug(f"index: {i},{j}. cntrl_0: {cntrl_0}.")
+                    fv_fm = np.mean(fv_fm_arr)
                     all_fv_fm.append(fv_fm)
 
                     filename_to_fv_fm[(str(filename), i, j)] = fv_fm
 
             logger.info(f"Mean fv/fm = {np.mean(all_fv_fm)}")
+            logger.info(f"Mean stdev of pixel fv/fm = {np.mean(all_fv_fm_std)}")
+
+            assert np.mean(all_fv_fm_std) < 0.035
 
         plot_all_fv_fm(filename_to_fv_fm, group)
-
-
-
-
 
 
 if __name__ == "__main__":
