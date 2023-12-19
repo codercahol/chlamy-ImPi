@@ -10,25 +10,28 @@ import logging
 
 import numpy as np
 from skimage import io, morphology
-import matplotlib.pyplot as plt
 import matplotlib
 from segment_multiwell_plate import segment_multiwell_plate
-
-
-matplotlib.use('agg')  # Fix for matplotlib memory leak, see https://github.com/matplotlib/matplotlib/issues/20067
 from tqdm import tqdm
 import pandas as pd
 
+from chlamy_impi.lib.visualize import visualise_channels, visualise_grid_crop, visualise_mask_array, visualise_well_histograms
+
 logger = logging.getLogger(__name__)
+matplotlib.use('agg')  # Fix for matplotlib memory leak, see https://github.com/matplotlib/matplotlib/issues/20067
 logging.getLogger("matplotlib").setLevel(logging.WARNING)
 
 
 # For now, input and output dir hard-coded here
 INPUT_DIR = Path("../data")
-OUTPUT_DIR = Path("../output/image_processing/v3")
+OUTPUT_DIR = Path("../output/image_processing/v6")
 USE_MULTIPROCESSING = False
 OUTPUT_VISUALISATIONS = True
 LOGGING_LEVEL = logging.DEBUG
+
+
+# TODO: for each plate, plot intensity histograms of each well, to inform thresholding
+# TODO: collect global intensity histogram stats
 
 
 def validate_inputs():
@@ -65,30 +68,6 @@ def write_plate_info(df: pd.DataFrame) -> None:
     df.to_csv(plate_info_path())
 
 
-def visualise_channels(tif, savedir, max_channels=None):
-    logger.debug(f"Writing out plots of all time points in {savedir}")
-
-    savedir.mkdir(parents=True, exist_ok=True)
-
-    shape = tif.shape
-
-    if max_channels is None:
-        max_channels = shape[0]
-
-    for channel in range(min(shape[0], max_channels)):
-        fig, ax = plt.subplots(1, 1)
-        ax.imshow(tif[channel, :, :])
-        fig.savefig(savedir / f"{channel}.png")
-        fig.clf()
-        plt.close(fig)
-
-    fig, ax = plt.subplots(1, 1)
-    ax.imshow(np.mean(tif, axis=0))
-    fig.savefig(savedir / f"avg.png")
-    fig.clf()
-    plt.close(fig)
-
-
 def remove_failed_photos(tif):
     """
     Remove photos that are all black
@@ -108,38 +87,6 @@ def remove_failed_photos(tif):
     return tif, sum(~keep_image)
 
 
-def visualise_grid_crop(tif, img_array, i_vals, j_vals, well_coords, savedir, max_channels=5):
-    logger.debug(f"Writing out plots of grid crop in {savedir}")
-    savedir.mkdir(parents=True, exist_ok=True)
-
-    img_shape = tif.shape
-    array_shape = img_array.shape
-
-    iv, jv = np.meshgrid(i_vals, j_vals, indexing="ij")
-    iv2, jv2 = np.meshgrid(i_vals, j_vals, indexing="xy")
-
-    for channel in range(min(img_shape[0], max_channels)):
-        fig, ax = plt.subplots(1, 1, figsize=(10, 8))
-        ax.imshow(tif[channel, :, :])
-        # Draw well centre coords
-        ax.scatter(list(zip(*well_coords))[1], list(zip(*well_coords))[0], color="red", marker="x", s=2)
-        # Draw grid
-        ax.plot(jv, iv, color="red")
-        ax.plot(jv2, iv2, color="red")
-        fig.savefig(savedir / f"{channel}_grid.png")
-        fig.clf()
-        plt.close(fig)
-
-        fig, axs = plt.subplots(array_shape[0], array_shape[1])
-        for i, j in itertools.product(range(array_shape[0]), range(array_shape[1])):
-            ax = axs[i, j]
-            ax.axis("off")
-            ax.imshow(img_array[i, j, channel], vmin=tif[channel].min(), vmax=tif[channel].max())
-        fig.savefig(savedir / f"{channel}_subimage_array.png")
-        fig.clf()
-        plt.close(fig)
-
-
 def estimate_noise_threshold(img_array):
     mean = img_array[0, 0, :].mean()
     std = img_array[0, 0, :].std()
@@ -150,16 +97,16 @@ def estimate_noise_threshold(img_array):
     return threshold
 
 
-def find_mask_array(img_array, threshold):
-    # Minimum value of a pixel across all timesteps must be above threshold
-    # Return array of shape [nx, ny, height, width]
-    img_array_mins = np.min(img_array, axis=2)
-    mask_array = img_array_mins > threshold
-
-    #disk_mask = get_disk_mask(img_array)
-    #mask_array = np.logical_and(mask_array, disk_mask)
-
-    return mask_array
+#def find_mask_array(img_array, threshold):
+#    # Minimum value of a pixel across all timesteps must be above threshold
+#    # Return array of shape [nx, ny, height, width]
+#    img_array_mins = np.min(img_array, axis=2)
+#    mask_array = img_array_mins > threshold
+#
+#    #disk_mask = get_disk_mask(img_array)
+#    #mask_array = np.logical_and(mask_array, disk_mask)
+#
+#    return mask_array
 
 
 def validate_well_mask_array(mask_array) -> int:
@@ -208,22 +155,6 @@ def get_disk_mask(img_array):
     return disk_mask
 
 
-def visualise_mask_array(mask_array, savedir):
-    logger.debug(f"Writing out plot of masks to {savedir}")
-    savedir.mkdir(parents=True, exist_ok=True)
-
-    array_shape = mask_array.shape
-
-    fig, axs = plt.subplots(array_shape[0], array_shape[1])
-    for i, j in itertools.product(range(array_shape[0]), range(array_shape[1])):
-        ax = axs[i, j]
-        ax.axis("off")
-        ax.imshow(mask_array[i, j])
-    fig.savefig(savedir / "mask_array.png")
-    fig.clf()
-    plt.close(fig)
-
-
 def count_empty_wells(mask_array):
     """
     Estimate the error due to misplating, which results in wells with no growing cells.
@@ -237,6 +168,22 @@ def count_empty_wells(mask_array):
     num_good_wells = np.sum(np.max(mask_array_flat_im, axis=-1))
     empty_wells = total_wells - num_good_wells
     return empty_wells, total_wells
+
+
+def img_array_outpath(outdir, name):
+    return outdir / f"{name}.npy"
+
+
+def save_img_array(img_array, outdir, name):
+    if not outdir.exists():
+        outdir.mkdir(parents=True)
+    np.save(img_array_outpath(outdir, name), img_array.astype(np.float32))
+
+
+def load_img_array(outdir, name):
+    return np.load(img_array_outpath(outdir, name))
+
+
 
 
 def save_mean_array(mean_fluor_array, name):
@@ -256,14 +203,6 @@ def save_mean_array(mean_fluor_array, name):
     df.to_csv(outfile)
     logger.info(f"Mean fluorescence array saved out to: {outfile}")
 
-
-def process_single_image(filename):
-
-
-    return
-
-
-# TODO: create functions to get path to csv file with mean fluor values, and path to per-file results folder
 
 def main():
     logger.info("\n" + "=" * 32 + "\nStarting image_processing.py...\n" + "=" * 32)
@@ -293,44 +232,53 @@ def main():
 
             img_array, well_coords, i_vals, j_vals = segment_multiwell_plate(
                 tif,
-                peak_finder_kwargs={"peak_prominence": 0.1},
+                peak_finder_kwargs={"peak_prominence": 1 / 25, "filter_threshold": 0.2},
+                blob_log_kwargs={"threshold": 0.12},
                 output_full=True)
 
-            threshold = estimate_noise_threshold(img_array)
+            # We expect all plates to be 16x24
+            assert img_array.shape[0] == 16
+            assert img_array.shape[1] == 24
 
-            logger.info(f"Threshold = {threshold}")
+            save_img_array(img_array, OUTPUT_DIR / "img_array", name)
 
-            mask_array = find_mask_array(img_array, threshold)
+            #threshold = estimate_noise_threshold(img_array)
 
-            empty_wells, total_wells = count_empty_wells(mask_array)
+            #logger.info(f"Threshold = {threshold}")
 
-            logger.info(f"Found a total of {empty_wells} / {total_wells} empty wells")
+            #mask_array = find_mask_array(img_array, threshold)
 
-            num_overlapping = validate_well_mask_array(mask_array)
+            #empty_wells, total_wells = count_empty_wells(mask_array)
 
-            masked_img_array = img_array * np.expand_dims(mask_array, axis=2)
+            #logger.info(f"Found a total of {empty_wells} / {total_wells} empty wells")
 
-            mean_fluor_array = np.mean(np.mean(masked_img_array, axis=4), axis=3)
+            #num_overlapping = validate_well_mask_array(mask_array)
 
-            save_mean_array(mean_fluor_array, name)
+            #masked_img_array = img_array * np.expand_dims(mask_array, axis=2)
 
-            plate_info = {"name": name,
-                 "timepoints": tif.shape[0],
-                 "num_blank_frames": num_blank_frames,
-                 "threshold": threshold,
-                 "total_wells": total_wells,
-                 "num_empty_wells": empty_wells,
-                 "num_overlapping_masks": num_overlapping}
+            # TODO: is this invalid, we are including the zeroes in the mean computation?
+            #mean_fluor_array = np.mean(np.mean(masked_img_array, axis=4), axis=3)
 
-            df = load_plate_info()
-            new_row = pd.DataFrame([plate_info])
-            df = pd.concat([df, new_row], ignore_index=True)
-            write_plate_info(df)
+            #save_mean_array(mean_fluor_array, name)
+
+            #plate_info = {"name": name,
+            #     "timepoints": tif.shape[0],
+            #     "num_blank_frames": num_blank_frames,
+            #     "threshold": threshold,
+            #     "total_wells": total_wells,
+            #     "num_empty_wells": empty_wells,
+            #     "num_overlapping_masks": num_overlapping}
+
+            #df = load_plate_info()
+            #new_row = pd.DataFrame([plate_info])
+            #df = pd.concat([df, new_row], ignore_index=True)
+            #write_plate_info(df)
 
             if OUTPUT_VISUALISATIONS:
                 visualise_channels(tif, savedir=results_dir_path(name) / "raw")
-                visualise_mask_array(mask_array, savedir=results_dir_path(name) / "masks")
+                visualise_well_histograms(img_array, name, savedir=OUTPUT_DIR / "histograms")
                 visualise_grid_crop(tif, img_array, i_vals, j_vals, well_coords, savedir=results_dir_path(name) / "grid")
+            #    visualise_mask_array(mask_array, savedir=results_dir_path(name) / "masks")
 
         except AssertionError as e:
             logger.error(f"File: {filename.stem}. Error: {e}")
