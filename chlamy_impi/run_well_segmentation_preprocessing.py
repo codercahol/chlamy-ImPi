@@ -23,7 +23,7 @@ logging.getLogger("matplotlib").setLevel(logging.WARNING)
 
 # For now, input and output dir hard-coded here
 INPUT_DIR = Path("../data")
-OUTPUT_DIR = Path("../output/image_processing/v6")
+OUTPUT_DIR = Path("../output/image_processing/v7")
 USE_MULTIPROCESSING = False
 OUTPUT_VISUALISATIONS = True
 LOGGING_LEVEL = logging.DEBUG
@@ -32,6 +32,7 @@ LOGGING_LEVEL = logging.DEBUG
 def validate_inputs():
     assert INPUT_DIR.exists()
     assert len(list(INPUT_DIR.glob("*.tif"))) > 0
+    assert len(list(INPUT_DIR.glob("*.tif"))) == len(set(INPUT_DIR.glob("*.tif")))
 
 
 def find_all_images():

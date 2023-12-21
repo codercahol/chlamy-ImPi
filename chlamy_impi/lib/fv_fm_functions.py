@@ -8,7 +8,6 @@ def compute_pixelwise_fv_fm(arr_0, arr_1, arr_mask, cntrl_0, cntrl_1) -> np.arra
     assert arr_0.shape == (20, 20)
     assert arr_mask.shape == arr_0.shape
     assert arr_mask.shape == arr_1.shape
-    #assert arr_mask.sum() >= 4
 
     arr_0 = filters.gaussian(arr_0, sigma=1, channel_axis=None)
     arr_1 = filters.gaussian(arr_1, sigma=1, channel_axis=None)
@@ -20,7 +19,7 @@ def compute_pixelwise_fv_fm(arr_0, arr_1, arr_mask, cntrl_0, cntrl_1) -> np.arra
     return fv_arr / fm_arr
 
 
-def compute_all_fv_fm(img_array, mask_array) -> np.array:
+def compute_all_fv_fm_averaged(img_array, mask_array) -> np.array:
     """Compute average fv/fm for each well in an entire plate
     """
     cntrl_0, cntrl_1 = get_background_intensity(img_array, mask_array)
@@ -36,6 +35,29 @@ def compute_all_fv_fm(img_array, mask_array) -> np.array:
                 cntrl_0,
                 cntrl_1
             ))
+
+    return all_fv_fm
+
+
+def compute_all_fv_fm_pixelwise(img_array, mask_array) -> np.array:
+    """Compute pixelwise fv/fm for each well in an entire plate. Outside the mask, the value is set to NaN.
+    """
+    cntrl_0, cntrl_1 = get_background_intensity(img_array, mask_array)
+
+    all_fv_fm = np.zeros_like(img_array[:, :, 0, ...])
+
+    for i in range(img_array.shape[0]):
+        for j in range(img_array.shape[1]):
+            fv_fm_nonzero = compute_pixelwise_fv_fm(
+                img_array[i, j, 0],
+                img_array[i, j, 1],
+                mask_array[i, j],
+                cntrl_0,
+                cntrl_1
+            )
+
+            all_fv_fm[i, j][mask_array[i, j]] = fv_fm_nonzero
+            all_fv_fm[i, j][~mask_array[i, j]] = np.nan
 
     return all_fv_fm
 

@@ -3,7 +3,6 @@ import logging
 from typing import Callable
 
 import numpy as np
-import skimage.morphology
 from skimage import morphology
 from skimage.morphology import binary_opening
 
