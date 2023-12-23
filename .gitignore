@@ -2,6 +2,12 @@
 .DS_Store
 .vscode/
 
+# ignore output directory
+output/
+
+# ignore irrelevant data files
+data/quirky
+
 # ignore note-taking
 chlamy_impi/plans.md
 journal.md

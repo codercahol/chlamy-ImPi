@@ -32,7 +32,8 @@ OUTPUT_VISUALISATIONS = True
 
 # %% Load the Image
 
-img_path = "../data/20231213 9-M5_2h-2h.tif"
+img_path = "../data/20231215 10-M1 1min-1min.tif"
+img_path2 = "../data/20231216 10-M2 20h HL.tif"
 
 # %% find all images
 logger.info("\n" + "=" * 32 + "\nStarting image_processing.py...\n" + "=" * 32)
@@ -49,7 +50,7 @@ logger.info(
 # %% initial screening
 failed_files = []
 # dealing with only 1 for simplicity
-filename = filenames[1]
+filename = Path(img_path2)
 
 name = filename.stem
 
@@ -119,6 +120,7 @@ empty_wells, total_wells = ip.count_empty_wells(total_mask)
 
 logger.info(f"Found a total of {empty_wells} / {total_wells} empty wells")
 
+# TODO - check masks hitting boundary
 num_overlapping = ip.validate_well_mask_array(total_mask)
 
 # save masked imgs
