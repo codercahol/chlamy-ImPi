@@ -3,7 +3,8 @@ from skimage import filters
 
 
 def compute_pixelwise_fv_fm(arr_0, arr_1, arr_mask, cntrl_0, cntrl_1) -> np.array:
-    """Compute fv/fm value for each pixel given a single well
+    """Compute fv/fm value for each pixel given a single well.
+    Returns a 1D array of fv/fm values for pixels inside the mask.
     """
     assert arr_0.shape == (20, 20)
     assert arr_mask.shape == arr_0.shape
