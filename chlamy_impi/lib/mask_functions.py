@@ -15,7 +15,8 @@ def compute_threshold_mask(
         img_arr: np.array,
         num_std: float = 3,
         use_opening: bool = False,
-        time_reduction_fn: Callable = np.min
+        time_reduction_fn: Callable = np.min,
+        return_threshold: bool = False
 ) -> np.array:
     """Function to compute a threshold-based mask array (i.e. masks all wells in a single plate)
     """
@@ -34,7 +35,10 @@ def compute_threshold_mask(
         for i, j in itertools.product(range(img_arr.shape[0]), range(img_arr.shape[1])):
             mask_arr[i, j] = binary_opening(mask_arr[i, j])
 
-    return mask_arr
+    if return_threshold:
+        return mask_arr, threshold
+    else:
+        return mask_arr
 
 
 def compute_std_threshold(img_arr, num_std: float = 3.0):
