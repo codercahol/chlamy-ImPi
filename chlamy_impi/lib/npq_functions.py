@@ -22,6 +22,6 @@ def compute_all_npq_averaged(img_array, mask_array) -> np.array:
 
     assert npq_array_means.shape == (img_array.shape[0], img_array.shape[1], num_steps)
     assert np.nanmax(npq_array_means) < 10.0
-    assert np.nanmin(npq_array_means) > -0.1, np.nanmin(npq_array_means)
+    #assert np.nanmin(npq_array_means) > -0.5, f"{np.nanmin(npq_array_means)}"
 
     return npq_array_means

@@ -9,7 +9,7 @@ The script is controlled using hard-coded constants at the top of the file. Thes
     - OUTPUT_DIR: directory to write the csv files to
 
 The database will have four tables:
-    - chlamy_screen_database: contains features extracted from the images, such as Fv/Fm, Y2, NPQ, along with experimental information
+    - image_features: contains features extracted from the images, such as Fv/Fm, Y2, NPQ, along with experimental information
     - identity: contains information about the identity of each mutant, such as well location, plate number, etc.
     - mutations: contains information about the mutations in each mutant, such as disrupted gene name, type, confidence level, etc.
     - gene_descriptions: contains lengthy descriptions of each gene
@@ -31,7 +31,7 @@ from chlamy_impi.lib.y2_functions import compute_all_y2_averaged
 
 logger = logging.getLogger(__name__)
 
-DEV_MODE = True
+DEV_MODE = False
 INPUT_DIR = Path("../../output/image_processing/v6/img_array")
 IDENTITY_SPREADSHEET_PATH = Path(
     "../../data/Identity plates in Burlacot Lab 20231221 simplified.xlsx - large-lib_rearray2.txt.csv")
@@ -65,6 +65,11 @@ def construct_img_feature_dataframe():
         logger.info(f"Processing image features from filename: {filename.name}")
 
         img_array = np.load(filename)
+
+        if img_array.shape[2] % 2 != 0:
+            logger.warning(f"Odd number of time steps ({img_array.shape[2]}), removing last time step")
+            img_array = img_array[:, :, :-1, ...]  # We rely on an even number of time steps, to pair up dark and light images for NPQ and Y2
+
         mask_array, threshold = compute_threshold_mask(img_array, return_threshold=True)
         fv_fm_array = compute_all_fv_fm_averaged(img_array, mask_array)
         y2_array = compute_all_y2_averaged(img_array, mask_array)
@@ -100,7 +105,7 @@ def construct_img_feature_dataframe():
     df = pd.DataFrame(rows)
     df = df.set_index(["plate", "i", "j"])
 
-    logger.info(f"Constructed dataframe. Shape: {df.shape}. Columns: {df.columns}.")
+    logger.info(f"Constructed image features dataframe. Shape: {df.shape}. Columns: {df.columns}.")
     return df
 
 
