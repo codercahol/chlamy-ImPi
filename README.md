@@ -17,7 +17,8 @@ in the `data` directory in this project. Then run the image processing pipeline:
 python run_well_segmentation_preprocessing.py
 ```
 
-This should store a bunch of `.npy` files in the `output` directory.
+This should store a bunch of `.npy` files in the `output` directory. Note- you can skip this step, and download 
+the `.npy` files directly from a shared cache here: https://drive.google.com/drive/folders/1LB1znkc95zbgKAPVU2Rz4MMwbdcjtsBK
 
 
 ### 2. Database creation
