@@ -22,8 +22,14 @@ import sqlite3
 
 import pandas as pd
 import numpy as np
+import pyarrow as pa
+import pyarrow.parquet as pq
 
-from chlamy_impi.database_creation.utils import location_to_index, parse_name, spreadsheet_plate_to_numeric
+from chlamy_impi.database_creation.utils import (
+    location_to_index,
+    parse_name,
+    spreadsheet_plate_to_numeric,
+)
 from chlamy_impi.lib.fv_fm_functions import compute_all_fv_fm_averaged
 from chlamy_impi.lib.mask_functions import compute_threshold_mask
 from chlamy_impi.lib.npq_functions import compute_all_npq_averaged
@@ -34,11 +40,12 @@ logger = logging.getLogger(__name__)
 DEV_MODE = False
 INPUT_DIR = Path("../../output/image_processing/v6/img_array")
 IDENTITY_SPREADSHEET_PATH = Path(
-    "../../data/Identity plates in Burlacot Lab 20231221 simplified.xlsx - large-lib_rearray2.txt.csv")
+    "../../data/Identity plates in Burlacot Lab 20231221 simplified.xlsx - large-lib_rearray2.txt.csv"
+)
 OUTPUT_DIR = Path("./../../output/database_creation/v1")
 
 
-def construct_img_feature_dataframe():
+def construct_img_feature_dataframe(input_dir: Path):
     """In this function, we extract all image features, such as Fv/Fm, Y2, NPQ
 
     TODO: add remaining experimental columns:
@@ -50,8 +57,8 @@ def construct_img_feature_dataframe():
      - # days S plate grown
      - Other quantifiers of fluorescence or shape heterogeneity
     """
-    assert INPUT_DIR.exists()
-    filenames = list(INPUT_DIR.glob("*.npy"))
+    assert input_dir.exists()
+    filenames = list(input_dir.glob("*.npy"))
 
     if DEV_MODE:
         filenames = filenames[:1]
@@ -67,8 +74,12 @@ def construct_img_feature_dataframe():
         img_array = np.load(filename)
 
         if img_array.shape[2] % 2 != 0:
-            logger.warning(f"Odd number of time steps ({img_array.shape[2]}), removing last time step")
-            img_array = img_array[:, :, :-1, ...]  # We rely on an even number of time steps, to pair up dark and light images for NPQ and Y2
+            logger.warning(
+                f"Odd number of time steps ({img_array.shape[2]}), removing last time step"
+            )
+            img_array = img_array[
+                :, :, :-1, ...
+            ]  # We rely on an even number of time steps, to pair up dark and light images for NPQ and Y2
 
         mask_array, threshold = compute_threshold_mask(img_array, return_threshold=True)
         fv_fm_array = compute_all_fv_fm_averaged(img_array, mask_array)
@@ -105,22 +116,26 @@ def construct_img_feature_dataframe():
     df = pd.DataFrame(rows)
     df = df.set_index(["plate", "i", "j"])
 
-    logger.info(f"Constructed image features dataframe. Shape: {df.shape}. Columns: {df.columns}.")
+    logger.info(
+        f"Constructed image features dataframe. Shape: {df.shape}. Columns: {df.columns}."
+    )
     return df
 
 
-def construct_description_dataframe() -> pd.DataFrame:
+def construct_gene_description_dataframe(identity_spreadsheet: Path) -> pd.DataFrame:
     """In this function, we extract all gene descriptions, and store as a separate dataframe
 
     Each gene has one description, but the descriptions are very long, so we store them separately
     """
-    df = pd.read_csv(IDENTITY_SPREADSHEET_PATH, header=0)
+    df = pd.read_csv(identity_spreadsheet, header=0)
 
     # Create new dataframe with just the gene descriptions, one for each gene
     df_gene_descriptions = df[["gene", "description"]]
     df_gene_descriptions = df_gene_descriptions.drop_duplicates(subset=["gene"])
 
-    logger.info(f"Constructed description dataframe. Shape: {df_gene_descriptions.shape}.")
+    logger.info(
+        f"Constructed description dataframe. Shape: {df_gene_descriptions.shape}."
+    )
     return df_gene_descriptions
 
 
@@ -134,16 +149,21 @@ def construct_mutations_dataframe() -> pd.DataFrame:
     df = df[["mutant_ID", "gene", "feature", "confidence_level"]]
     df = df.drop_duplicates(ignore_index=True)
 
-    logger.info(f"Constructed mutation dataframe. Shape: {df.shape}. Columns: {df.columns}.")
+    logger.info(
+        f"Constructed mutation dataframe. Shape: {df.shape}. Columns: {df.columns}."
+    )
     return df
 
 
-def construct_identity_dataframe(mutation_df: pd.DataFrame) -> pd.DataFrame:
+def construct_identity_dataframe(
+    identity_spreadsheet: Path, mutation_df: pd.DataFrame, conf_threshold: int = 5
+) -> pd.DataFrame:
     """In this function, we extract all identity features, such as strain name, location, etc.
 
-    There is a single row per mutant_ID
+    There is a single row per plate-well ID
+    (currently this corresponds also to a unique mutant ID, but won't always)
     """
-    df = pd.read_csv(IDENTITY_SPREADSHEET_PATH, header=0)
+    df = pd.read_csv(identity_spreadsheet, header=0)
 
     # Assert that there are no null values in the "Location" and "New Location" columns
     assert df["Location"].notnull().all()
@@ -152,24 +172,41 @@ def construct_identity_dataframe(mutation_df: pd.DataFrame) -> pd.DataFrame:
     # Collect columns which we need
     df = df.rename(columns={"New location": "plate", "Location": "location"})
     df = df[["mutant_ID", "plate", "location"]]
-    df = df.drop_duplicates(ignore_index=True)
 
-    # Add columns to locate each well (i is row #, j is column #)
     df["plate"] = df["plate"].apply(spreadsheet_plate_to_numeric)
-    df["i"] = df["location"].apply(lambda x: location_to_index(x)[0])
-    df["j"] = df["location"].apply(lambda x: location_to_index(x)[1])
+    df["row_idx"] = df["location"].apply(lambda x: location_to_index(x)[0])
+    df["col_idx"] = df["location"].apply(lambda x: location_to_index(x)[1])
+
+    # set a unique index
+    df["id"] = df.apply(lambda x: "{}-{}}".format(x.plate, x.location), axis=1)
+    df = df.drop(columns=["location"])
+    df = df.drop_duplicates(ignore_index=True)
+    df.set_index("id")
 
     # Add column which tells us the number of genes which were mutated
     gene_mutation_counts = mutation_df.groupby("mutant_ID").count()["gene"]
+
+    signif_mutations = mutation_df[mutation_df.confidence_level <= conf_threshold]
+    mutated_genes = signif_mutations.groupby("mutant_ID").apply(
+        lambda x: ",".join(set(x.gene))
+    )
+    mutated_genes = mutated_genes.reset_index().rename(columns={0: "mutated_genes"})
+    df = pd.merge(df, mutated_genes, on="mutant_ID")
+
     df["num_mutations"] = df["mutant_ID"].apply(lambda x: gene_mutation_counts[x])
 
-    logger.info(f"Constructed identity dataframe. Shape: {df.shape}. Columns: {df.columns}.")
+    logger.info(
+        f"Constructed identity dataframe. Shape: {df.shape}. Columns: {df.columns}."
+    )
     return df
 
 
+# goal: do prelim anal of T.S. using parquet
+# goal: organize the saved parquet files more to get the other datatypes needed
+
+
 def write_dataframe(df: pd.DataFrame, name: str):
-    """In this function, we write the dataframe to a csv file
-    """
+    """In this function, we write the dataframe to a csv file"""
     if not OUTPUT_DIR.exists():
         OUTPUT_DIR.mkdir(parents=True)
     df.to_csv(OUTPUT_DIR / name)
@@ -178,19 +215,23 @@ def write_dataframe(df: pd.DataFrame, name: str):
 
 
 def create_sqlite_database(name_to_df: dict[str, pd.DataFrame]):
-    """In this function, we create a sqlite database from the two dataframes
-    """
+    """In this function, we create a sqlite database from the two dataframes"""
     conn = sqlite3.connect(OUTPUT_DIR / "chlamy_screen_database.db")
     for name, df in name_to_df.items():
         df.to_sql(name, conn, if_exists="replace")
     conn.close()
 
 
+def save_df_to_parquet():
+    return
+
+
 def main():
-    image_features_df = construct_img_feature_dataframe()
-    descriptions_df = construct_description_dataframe()
+    image_features_df = construct_img_feature_dataframe(INPUT_DIR)
     mutations_df = construct_mutations_dataframe()
     identity_df = construct_identity_dataframe(mutations_df)
+
+    gene_descriptions = construct_gene_description_dataframe(IDENTITY_SPREADSHEET_PATH)
 
     name_to_df = {
         "image_features": image_features_df,
