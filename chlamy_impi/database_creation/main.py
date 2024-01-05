@@ -15,11 +15,15 @@ The database will have five tables:
     - mutations: contains information about the mutations in each mutant, such as disrupted gene name, type, confidence level, etc.
     - gene_descriptions: contains lengthy descriptions of each gene
 """
+# %%
+%load_ext autoreload
+%autoreload 2
+
 import datetime
 from itertools import product
 from pathlib import Path
 import logging
-import sqlite3
+from typing import List, Optional
 
 import pandas as pd
 import numpy as np
@@ -32,6 +36,7 @@ from chlamy_impi.database_creation.error_correction import (
 )
 from chlamy_impi.database_creation.utils import (
     location_to_index,
+    index_to_location_rowwise,
     parse_name,
     spreadsheet_plate_to_numeric,
     compute_measurement_times,
@@ -52,64 +57,6 @@ IDENTITY_SPREADSHEET_PATH = Path(
 OUTPUT_DIR = Path("./../../output/database_creation/v2")
 
 
-def construct_plate_info_dataframe():
-    """In this function, we construct a dataframe containing information about each plate
-
-    This includes:
-        - Plate number
-        - Start date
-        - Light regime
-        - Threshold
-        - Number of frames
-        - Measurement times
-
-
-    TODO: add remaining experimental columns:
-     - Was there an issue?
-     - Temperature under camera (avg, max, min)
-     - Temperature in algae house
-     - # days M plate grown
-     - # days S plate grown
-     - Time duration of experiment corresponding to each time point
-    """
-    filenames_meta, filenames_npy = get_filenames()
-
-    rows = []
-
-    for filename_npy, filename_meta in zip(filenames_npy, filenames_meta):
-        logger.info(f"Processing plate info from filename: {filename_npy.name}")
-        plate_num, measurement_num, light_regime = parse_name(filename_npy)
-
-        img_array, meta_df = prepare_img_array_and_df(filename_meta, filename_npy)
-
-        measurement_times = compute_measurement_times(meta_df=meta_df)
-
-        _, threshold = compute_threshold_mask(img_array, return_threshold=True)
-
-        rows.append(
-            {
-                "plate": plate_num,
-                "measurement": measurement_num,
-                "light_regime": light_regime,
-                "threshold": threshold,
-                "num_frames": img_array.shape[2],
-            }
-        )
-
-        for i in range(82):
-            try:
-                rows[-1][f"measurement_time_{i}"] = measurement_times[i]
-            except IndexError:
-                rows[-1][f"measurement_time_{i}"] = np.nan
-
-    df = pd.DataFrame(rows)
-    logger.info(
-        f"Constructed plate info dataframe. Shape: {df.shape}. Columns: {df.columns}."
-    )
-    logger.info(f"{df.head()}")
-    return df
-
-
 def prepare_img_array_and_df(filename_meta, filename_npy):
     img_array = np.load(filename_npy)
     img_array = remove_repeated_initial_frame(img_array)
@@ -118,10 +65,10 @@ def prepare_img_array_and_df(filename_meta, filename_npy):
     return img_array, meta_df
 
 
-def get_filenames():
-    assert INPUT_DIR.exists()
+def get_filenames(input_dir: Path):
+    assert input_dir.exists()
 
-    filenames_npy = list(INPUT_DIR.glob("*.npy"))
+    filenames_npy = list(input_dir.glob("*.npy"))
     filenames_npy.sort()
 
     filenames_meta = [x.with_suffix(".csv") for x in filenames_npy]
@@ -142,13 +89,32 @@ def get_filenames():
     return filenames_meta, filenames_npy
 
 
-def construct_img_feature_dataframe() -> pd.DataFrame:
-    """In this function, we extract all image features, such as Fv/Fm, Y2, NPQ
+def construct_exptl_data_df(input_dir: Path) -> pd.DataFrame:
+    """In this function, we construct a dataframe containing all the
+     experimental data from experiments and image segmentation
+      This includes image features, such as Fv/Fm, Y2, NPQ
 
-    TODO:
+    This also includes:
+        - Plate number
+        - Start date
+        - Light regime
+        - Threshold
+        - Number of frames
+        - Measurement times
+
+
+    TODO: add remaining experimental columns:
+     - Was there an issue?
+     - Temperature under camera (avg, max, min)
+     - Temperature in algae house
+     - # days M plate grown
+     - # days S plate grown
+     - Time duration of experiment corresponding to each time point
+     TODO:
      - Other quantifiers of fluorescence or shape heterogeneity
     """
-    filenames_meta, filenames_npy = get_filenames()
+
+    filenames_meta, filenames_npy = get_filenames(input_dir)
 
     rows = []
 
@@ -161,9 +127,11 @@ def construct_img_feature_dataframe() -> pd.DataFrame:
 
         img_array, meta_df = prepare_img_array_and_df(filename_meta, filename_npy)
 
+        measurement_times = compute_measurement_times(meta_df=meta_df)
+
         assert img_array.shape[2] % 2 == 0
 
-        mask_array = compute_threshold_mask(img_array, return_threshold=False)
+        mask_array, threshold = compute_threshold_mask(img_array, return_threshold=True)
         fv_fm_array = compute_all_fv_fm_averaged(img_array, mask_array)
         y2_array = compute_all_y2_averaged(img_array, mask_array)
 
@@ -179,6 +147,9 @@ def construct_img_feature_dataframe() -> pd.DataFrame:
                 "j": j,
                 "fv_fm": fv_fm_array[i, j],
                 "mask_area": np.sum(mask_array[i, j]),
+                "light_regime": light_regime,
+                "threshold": threshold,
+                "num_frames": img_array.shape[2],
             }
 
             assert len(y2_array[i, j]) <= 81
@@ -199,9 +170,19 @@ def construct_img_feature_dataframe() -> pd.DataFrame:
                 except IndexError:
                     row_data[f"npq_{tstep}"] = np.nan
 
+            for k in range(82):
+                try:
+                    row_data[f"measurement_time_{k}"] = measurement_times[k]
+                except IndexError:
+                    row_data[f"measurement_time_{k}"] = np.nan
+
             rows.append(row_data)
 
     df = pd.DataFrame(rows)
+    df["id"] = df.apply(
+        lambda x: "{}-{}".format(x.plate, index_to_location_rowwise(x)), axis=1
+    )
+    df = df.set_index("id")
 
     logger.info(
         f"Constructed image features dataframe. Shape: {df.shape}. Columns: {df.columns}."
@@ -236,7 +217,10 @@ def construct_mutations_dataframe(identity_spreadsheet: Path) -> pd.DataFrame:
     """
     df = pd.read_csv(identity_spreadsheet, header=0)
 
-    df = df[["mutant_ID", "gene", "feature", "confidence_level"]]
+    # TODO: verify that we don't want to include which gene feature
+    # rn if we include gene features, we double count mutations to a single gene
+    # if the primers picked up different regions of the gene
+    df = df[["mutant_ID", "gene", "confidence_level"]]
     df = df.drop_duplicates(ignore_index=True)
 
     logger.info(
@@ -263,26 +247,23 @@ def construct_identity_dataframe(
     # Collect columns which we need
     df = df.rename(columns={"New location": "plate", "Location": "location"})
     df = df[["mutant_ID", "plate", "location"]]
-
     df["plate"] = df["plate"].apply(spreadsheet_plate_to_numeric)
-    df["row_idx"] = df["location"].apply(lambda x: location_to_index(x)[0])
-    df["col_idx"] = df["location"].apply(lambda x: location_to_index(x)[1])
 
     # set a unique index
-    df["id"] = df.apply(lambda x: "{}-{}}".format(x.plate, x.location), axis=1)
-    df = df.drop(columns=["location"])
+    df["id"] = df.apply(lambda x: "{}-{}".format(x.plate, x.location), axis=1)
+    df = df.drop(columns=["location", "plate"])
     df = df.drop_duplicates(ignore_index=True)
-    df.set_index("id")
-
+    
     # Add column which tells us the number of genes which were mutated
-    gene_mutation_counts = mutation_df.groupby("mutant_ID").count()["gene"]
-
     signif_mutations = mutation_df[mutation_df.confidence_level <= conf_threshold]
+    gene_mutation_counts = signif_mutations.groupby("mutant_ID").nunique()["gene"]
+
     mutated_genes = signif_mutations.groupby("mutant_ID").apply(
         lambda x: ",".join(set(x.gene))
     )
     mutated_genes = mutated_genes.reset_index().rename(columns={0: "mutated_genes"})
     df = pd.merge(df, mutated_genes, on="mutant_ID")
+    df = df.set_index("id")
 
     df["num_mutations"] = df["mutant_ID"].apply(lambda x: gene_mutation_counts[x])
 
@@ -292,48 +273,44 @@ def construct_identity_dataframe(
     return df
 
 
-def write_dataframe(df: pd.DataFrame, name: str):
+def write_dataframe(df: pd.DataFrame, name: str, output_dir: Path = OUTPUT_DIR):
     """In this function, we write the dataframe to a csv file"""
-    if not OUTPUT_DIR.exists():
-        OUTPUT_DIR.mkdir(parents=True)
-    df.to_csv(OUTPUT_DIR / name)
+    if not output_dir.exists():
+        output_dir.mkdir(parents=True)
+    df.to_csv(output_dir / name)
 
     logger.info(f"Written dataframe to {OUTPUT_DIR / name}")
 
 
-def create_sqlite_database(name_to_df: dict[str, pd.DataFrame]):
-    """In this function, we create a sqlite database from the two dataframes"""
-    conn = sqlite3.connect(OUTPUT_DIR / "chlamy_screen_database.db")
-    for name, df in name_to_df.items():
-        df.to_sql(name, conn, if_exists="replace")
-    conn.close()
+def save_df_to_parquet(df: pd.DataFrame, filename: str, output_dir: Path = OUTPUT_DIR):
+    table = pa.Table.from_pandas(df)
+    if not output_dir.exists():
+        output_dir.mkdir(parents=True)
+    filename = filename + ".parquet"
+    pq.write_table(table, output_dir / filename)
+    logger.info("File saved at: {}".format(output_dir / filename))
 
-
-def save_df_to_parquet():
-    return
-
+def read_df_from_parquet(
+        filename: str, columns: Optional[List[str]] = None
+) -> pd.DataFrame:
+    table = pq.read_table(filename, columns = columns)
+    df = table.to_pandas()
+    return df
 
 def main():
-    plate_info_df = construct_plate_info_dataframe()
-    image_features_df = construct_img_feature_dataframe(INPUT_DIR)
+    exptl_data = construct_exptl_data_df(INPUT_DIR)
     mutations_df = construct_mutations_dataframe(IDENTITY_SPREADSHEET_PATH)
     identity_df = construct_identity_dataframe(IDENTITY_SPREADSHEET_PATH, mutations_df)
 
+    total_df = pd.merge(exptl_data, identity_df, on="id")
+    save_df_to_parquet(total_df, "db")
+    df = read_df_from_parquet(OUTPUT_DIR / "db.parquet")
+
     gene_descriptions = construct_gene_description_dataframe(IDENTITY_SPREADSHEET_PATH)
+    write_dataframe(gene_descriptions, f"gene_descriptions.csv")
 
-    name_to_df = {
-        "plate_info": plate_info_df,
-        "image_features": image_features_df,
-        "identity": identity_df,
-        "gene_descriptions": gene_descriptions,
-        "mutations": mutations_df,
-    }
 
-    for name, df in name_to_df.items():
-        write_dataframe(df, f"{name}.csv")
-
-    create_sqlite_database(name_to_df)
-
+# %%
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.DEBUG if DEV_MODE else logging.INFO)
