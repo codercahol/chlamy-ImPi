@@ -23,7 +23,14 @@ the `.npy` files directly from a shared cache here: https://drive.google.com/dri
 
 ### 2. Database creation
 
-In progress. See the branch `7-database-creation`. This code will create a database of our data, to be used for all further analysis.
+Run 
+
+```
+python main.py
+```
+
+in the `database_creation` directory. This has a hardcoded input directory where it looks for .npy and corresponding .csv files, which you might need to alter.
+You can also skip this step, and download a pre-created database directly from this folder: https://drive.google.com/drive/folders/1hclnhGfkmy8Rh1l_703z4dsmeCx1DbVz 
 
 
 ## Data analysis
