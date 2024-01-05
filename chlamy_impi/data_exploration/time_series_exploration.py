@@ -3,8 +3,12 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from pathlib import Path
 
+
+OUTDIR = Path("./../../output/data_exploration/v1")
+
+
 def load_csvs():
-    outdir = Path("./../../output/database_creation/v1")
+    outdir = Path("./../../output/database_creation/v2")
 
     name_to_df = {}
 
@@ -16,8 +20,57 @@ def load_csvs():
     return name_to_df
 
 
+def plot_all_time_series(df, df_plate):
+    # Find all plates and M#s from df_plate first
+    plates = df_plate["plate"].unique()
+    measurements = df_plate["measurement"].unique()
+
+    # For each plate and measurement, plot all time series if the data exists
+    for plate in plates:
+        for m in measurements:
+            df_subset = df[(df["plate"] == plate) & (df["measurement"] == m)]
+
+            if len(df_subset) > 0:
+                light_treatment = \
+                    df_plate[(df_plate["plate"] == plate) & (df_plate["measurement"] == m)]["light_regime"].values[0]
+                time_series_filename = OUTDIR / f"raw_timeseries_{plate}_{m}.png"
+                plot_both_time_series(df_subset, plate, m, light_treatment, time_series_filename)
+                print(f"Plot written to {time_series_filename}")
+
+            else:
+                print(f"No data for plate {plate} measurement {m}")
+
+
+
+def plot_both_time_series(df, plate, m, treatment, filename):
+    y2_cols = [f"y2_{i}" for i in range(1, 82)]
+    npq_cols = [f"npq_{i}" for i in range(1, 82)]
+
+    fig, axs = plt.subplots(2, 1, figsize=(18, 10), sharex=True)
+    for i, row in df.iterrows():
+        y2_vals = row[y2_cols].values
+        npq_vals = row[npq_cols].values
+        axs[0].plot(y2_vals, color="black", alpha=0.2)
+        axs[1].plot(npq_vals, color="black", alpha=0.2)
+
+    #axs[0].set_xlabel("Time point")
+    axs[0].set_ylabel("Y2")
+    axs[0].set_title(f"Y2 time series for plate {plate} measurement {m}: {treatment}")
+
+    axs[1].set_xlabel("Time point")
+    axs[1].set_ylabel("NPQ")
+    axs[1].set_title(f"NPQ time series for plate {plate} measurement {m}: {treatment}")
+
+    fig.savefig(filename)
+    plt.close(fig)
+
+
+
 def main():
     name_to_df = load_csvs()
+
+    if not OUTDIR.exists():
+        OUTDIR.mkdir(parents=True, exist_ok=True)
 
     for name, df in name_to_df.items():
         print(name)
@@ -26,6 +79,13 @@ def main():
 
     # Extract 5-M6 rows from the image feature df
     df = name_to_df["image_features"]
+    df_plate = name_to_df["plate_info"]
+
+    plot_all_time_series(df, df_plate)
+
+    assert 0
+
+
     df = df[(df["plate"] == 5) & (df["measurement"] == "M6")]
     print(df)
 
