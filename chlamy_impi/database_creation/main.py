@@ -139,12 +139,12 @@ def construct_gene_description_dataframe(identity_spreadsheet: Path) -> pd.DataF
     return df_gene_descriptions
 
 
-def construct_mutations_dataframe() -> pd.DataFrame:
+def construct_mutations_dataframe(identity_spreadsheet: Path) -> pd.DataFrame:
     """In this function, we extract all mutation features, such as gene name, location, etc.
 
     This is a separate table because each mutant_ID can have several mutations
     """
-    df = pd.read_csv(IDENTITY_SPREADSHEET_PATH, header=0)
+    df = pd.read_csv(identity_spreadsheet, header=0)
 
     df = df[["mutant_ID", "gene", "feature", "confidence_level"]]
     df = df.drop_duplicates(ignore_index=True)
@@ -201,10 +201,6 @@ def construct_identity_dataframe(
     return df
 
 
-# goal: do prelim anal of T.S. using parquet
-# goal: organize the saved parquet files more to get the other datatypes needed
-
-
 def write_dataframe(df: pd.DataFrame, name: str):
     """In this function, we write the dataframe to a csv file"""
     if not OUTPUT_DIR.exists():
@@ -228,15 +224,15 @@ def save_df_to_parquet():
 
 def main():
     image_features_df = construct_img_feature_dataframe(INPUT_DIR)
-    mutations_df = construct_mutations_dataframe()
-    identity_df = construct_identity_dataframe(mutations_df)
+    mutations_df = construct_mutations_dataframe(IDENTITY_SPREADSHEET_PATH)
+    identity_df = construct_identity_dataframe(IDENTITY_SPREADSHEET_PATH, mutations_df)
 
     gene_descriptions = construct_gene_description_dataframe(IDENTITY_SPREADSHEET_PATH)
 
     name_to_df = {
         "image_features": image_features_df,
         "identity": identity_df,
-        "gene_descriptions": descriptions_df,
+        "gene_descriptions": gene_descriptions,
         "mutations": mutations_df,
     }
 
