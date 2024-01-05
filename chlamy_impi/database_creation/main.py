@@ -34,7 +34,7 @@ from chlamy_impi.lib.y2_functions import compute_all_y2_averaged
 
 logger = logging.getLogger(__name__)
 
-DEV_MODE = True
+DEV_MODE = False
 
 INPUT_DIR = Path("../../data")
 IDENTITY_SPREADSHEET_PATH = Path(
@@ -62,22 +62,7 @@ def construct_plate_info_dataframe():
      - # days S plate grown
      - Time duration of experiment corresponding to each time point
     """
-    assert INPUT_DIR.exists()
-
-    filenames_npy = list(INPUT_DIR.glob("*.npy"))
-    filenames_meta = list(INPUT_DIR.glob("*.csv"))
-    filenames_npy.sort()
-    filenames_meta.sort()
-
-    if DEV_MODE:
-        filenames_npy = filenames_npy[:10]
-        filenames_meta = filenames_meta[:10]
-        logger.info(f"DEV_MODE: only using {len(filenames_meta)} files")
-
-    # Check that these two lists of filenames are the same
-    assert len(filenames_npy) == len(filenames_meta)
-    for f1, f2 in zip(filenames_npy, filenames_meta):
-        assert f1.stem == f2.stem, f"{f1.stem} != {f2.stem}"
+    filenames_meta, filenames_npy = get_filenames()
 
     rows = []
 
@@ -85,10 +70,7 @@ def construct_plate_info_dataframe():
         logger.info(f"Processing plate info from filename: {filename_npy.name}")
         plate_num, measurement_num, light_regime = parse_name(filename_npy)
 
-        img_array = np.load(filename_npy)
-        img_array = remove_repeated_initial_frame(img_array)
-        meta_df = pd.read_csv(filename_meta, header=0, delimiter=";").iloc[:, :-1]
-        meta_df, img_array = fix_erroneous_time_points(meta_df, img_array)
+        img_array, meta_df = prepare_img_array_and_df(filename_meta, filename_npy)
 
         measurement_times = compute_measurement_times(meta_df=meta_df)
 
@@ -114,16 +96,21 @@ def construct_plate_info_dataframe():
     return df
 
 
-def construct_img_feature_dataframe() -> pd.DataFrame:
-    """In this function, we extract all image features, such as Fv/Fm, Y2, NPQ
+def prepare_img_array_and_df(filename_meta, filename_npy):
+    img_array = np.load(filename_npy)
+    img_array = remove_repeated_initial_frame(img_array)
+    meta_df = pd.read_csv(filename_meta, header=0, delimiter=";").iloc[:, :-1]
+    meta_df, img_array = fix_erroneous_time_points(meta_df, img_array)
+    return img_array, meta_df
 
-    TODO:
-     - Other quantifiers of fluorescence or shape heterogeneity
-    """
+
+def get_filenames():
+    assert INPUT_DIR.exists()
+
     filenames_npy = list(INPUT_DIR.glob("*.npy"))
-    filenames_meta = list(INPUT_DIR.glob("*.csv"))
     filenames_npy.sort()
-    filenames_meta.sort()
+
+    filenames_meta = [x.with_suffix(".csv") for x in filenames_npy]
 
     if DEV_MODE:
         filenames_npy = filenames_npy[:10]
@@ -134,6 +121,20 @@ def construct_img_feature_dataframe() -> pd.DataFrame:
     assert len(filenames_npy) == len(filenames_meta)
     for f1, f2 in zip(filenames_npy, filenames_meta):
         assert f1.stem == f2.stem, f"{f1.stem} != {f2.stem}"
+        assert f2.exists(), f"{f2} does not exist"
+
+    logger.info(f"Found {len(filenames_npy)} files in {INPUT_DIR}")
+
+    return filenames_meta, filenames_npy
+
+
+def construct_img_feature_dataframe() -> pd.DataFrame:
+    """In this function, we extract all image features, such as Fv/Fm, Y2, NPQ
+
+    TODO:
+     - Other quantifiers of fluorescence or shape heterogeneity
+    """
+    filenames_meta, filenames_npy = get_filenames()
 
     rows = []
 
@@ -142,10 +143,7 @@ def construct_img_feature_dataframe() -> pd.DataFrame:
 
         logger.info(f"\n\n\nProcessing image features from filename: {filename_npy.name}")
 
-        img_array = np.load(filename_npy)
-        img_array = remove_repeated_initial_frame(img_array)
-        meta_df = pd.read_csv(filename_meta, header=0, delimiter=";").iloc[:, :-1]
-        meta_df, img_array = fix_erroneous_time_points(meta_df, img_array)
+        img_array, meta_df = prepare_img_array_and_df(filename_meta, filename_npy)
 
         assert img_array.shape[2] % 2 == 0
 
@@ -197,6 +195,7 @@ def construct_description_dataframe() -> pd.DataFrame:
 
     Each gene has one description, but the descriptions are very long, so we store them separately
     """
+    assert IDENTITY_SPREADSHEET_PATH.exists()
     df = pd.read_csv(IDENTITY_SPREADSHEET_PATH, header=0)
 
     # Create new dataframe with just the gene descriptions, one for each gene
