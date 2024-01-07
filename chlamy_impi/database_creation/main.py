@@ -15,13 +15,8 @@ The database will have five tables:
     - mutations: contains information about the mutations in each mutant, such as disrupted gene name, type, confidence level, etc.
     - gene_descriptions: contains lengthy descriptions of each gene
 """
-# %%
-%load_ext autoreload
-%autoreload 2
 
-import datetime
 from itertools import product
-from pathlib import Path
 import logging
 from typing import List, Optional
 
@@ -35,7 +30,6 @@ from chlamy_impi.database_creation.error_correction import (
     remove_repeated_initial_frame,
 )
 from chlamy_impi.database_creation.utils import (
-    location_to_index,
     index_to_location_rowwise,
     parse_name,
     spreadsheet_plate_to_numeric,
@@ -45,16 +39,12 @@ from chlamy_impi.lib.fv_fm_functions import compute_all_fv_fm_averaged
 from chlamy_impi.lib.mask_functions import compute_threshold_mask
 from chlamy_impi.lib.npq_functions import compute_all_npq_averaged
 from chlamy_impi.lib.y2_functions import compute_all_y2_averaged
+from chlamy_impi.paths import get_npy_and_csv_filenames, get_identity_spreadsheet_path, get_database_output_dir, \
+    get_parquet_filename
 
 logger = logging.getLogger(__name__)
 
 DEV_MODE = False
-
-INPUT_DIR = Path("../../data")
-IDENTITY_SPREADSHEET_PATH = Path(
-    "../../data/Identity plates in Burlacot Lab 20231221 simplified.xlsx - large-lib_rearray2.txt.csv"
-)
-OUTPUT_DIR = Path("./../../output/database_creation/v2")
 
 
 def prepare_img_array_and_df(filename_meta, filename_npy):
@@ -65,31 +55,7 @@ def prepare_img_array_and_df(filename_meta, filename_npy):
     return img_array, meta_df
 
 
-def get_filenames(input_dir: Path):
-    assert input_dir.exists()
-
-    filenames_npy = list(input_dir.glob("*.npy"))
-    filenames_npy.sort()
-
-    filenames_meta = [x.with_suffix(".csv") for x in filenames_npy]
-
-    if DEV_MODE:
-        filenames_npy = filenames_npy[:10]
-        filenames_meta = filenames_meta[:10]
-        logger.info(f"DEV_MODE: only using {len(filenames_meta)} files")
-
-    # Check that these two lists of filenames are the same
-    assert len(filenames_npy) == len(filenames_meta)
-    for f1, f2 in zip(filenames_npy, filenames_meta):
-        assert f1.stem == f2.stem, f"{f1.stem} != {f2.stem}"
-        assert f2.exists(), f"{f2} does not exist"
-
-    logger.info(f"Found {len(filenames_npy)} files in {INPUT_DIR}")
-
-    return filenames_meta, filenames_npy
-
-
-def construct_exptl_data_df(input_dir: Path) -> pd.DataFrame:
+def construct_exptl_data_df() -> pd.DataFrame:
     """In this function, we construct a dataframe containing all the
      experimental data from experiments and image segmentation
       This includes image features, such as Fv/Fm, Y2, NPQ
@@ -114,12 +80,12 @@ def construct_exptl_data_df(input_dir: Path) -> pd.DataFrame:
      - Other quantifiers of fluorescence or shape heterogeneity
     """
 
-    filenames_meta, filenames_npy = get_filenames(input_dir)
+    filenames_meta, filenames_npy = get_npy_and_csv_filenames(dev_mode=DEV_MODE)
 
     rows = []
 
     for filename_npy, filename_meta in zip(filenames_npy, filenames_meta):
-        plate_num, measurement_num, light_regime = parse_name(filename_npy)
+        plate_num, measurement_num, light_regime = parse_name(filename_npy.name)
 
         logger.info(
             f"\n\n\nProcessing image features from filename: {filename_npy.name}"
@@ -130,6 +96,7 @@ def construct_exptl_data_df(input_dir: Path) -> pd.DataFrame:
         measurement_times = compute_measurement_times(meta_df=meta_df)
 
         assert img_array.shape[2] % 2 == 0
+        assert img_array.shape[2] // 2 == len(measurement_times)
 
         mask_array, threshold = compute_threshold_mask(img_array, return_threshold=True)
         fv_fm_array = compute_all_fv_fm_averaged(img_array, mask_array)
@@ -191,13 +158,14 @@ def construct_exptl_data_df(input_dir: Path) -> pd.DataFrame:
     return df
 
 
-def construct_gene_description_dataframe(identity_spreadsheet: Path) -> pd.DataFrame:
+def construct_gene_description_dataframe() -> pd.DataFrame:
     """In this function, we extract all gene descriptions, and store as a separate dataframe
 
     Each gene has one description, but the descriptions are very long, so we store them separately
     """
-    assert IDENTITY_SPREADSHEET_PATH.exists()
-    df = pd.read_csv(IDENTITY_SPREADSHEET_PATH, header=0)
+    id_spreadsheet_path = get_identity_spreadsheet_path()
+    assert id_spreadsheet_path.exists()
+    df = pd.read_csv(id_spreadsheet_path, header=0)
 
     # Create new dataframe with just the gene descriptions, one for each gene
     df_gene_descriptions = df[["gene", "description"]]
@@ -210,11 +178,12 @@ def construct_gene_description_dataframe(identity_spreadsheet: Path) -> pd.DataF
     return df_gene_descriptions
 
 
-def construct_mutations_dataframe(identity_spreadsheet: Path) -> pd.DataFrame:
+def construct_mutations_dataframe() -> pd.DataFrame:
     """In this function, we extract all mutation features, such as gene name, location, etc.
 
     This is a separate table because each mutant_ID can have several mutations
     """
+    identity_spreadsheet = get_identity_spreadsheet_path()
     df = pd.read_csv(identity_spreadsheet, header=0)
 
     # TODO: verify that we don't want to include which gene feature
@@ -230,14 +199,14 @@ def construct_mutations_dataframe(identity_spreadsheet: Path) -> pd.DataFrame:
     return df
 
 
-def construct_identity_dataframe(
-    identity_spreadsheet: Path, mutation_df: pd.DataFrame, conf_threshold: int = 5
+def construct_identity_dataframe(mutation_df: pd.DataFrame, conf_threshold: int = 5
 ) -> pd.DataFrame:
     """In this function, we extract all identity features, such as strain name, location, etc.
 
     There is a single row per plate-well ID
     (currently this corresponds also to a unique mutant ID, but won't always)
     """
+    identity_spreadsheet = get_identity_spreadsheet_path()
     df = pd.read_csv(identity_spreadsheet, header=0)
 
     # Assert that there are no null values in the "Location" and "New Location" columns
@@ -273,44 +242,48 @@ def construct_identity_dataframe(
     return df
 
 
-def write_dataframe(df: pd.DataFrame, name: str, output_dir: Path = OUTPUT_DIR):
+def write_dataframe(df: pd.DataFrame, name: str):
     """In this function, we write the dataframe to a csv file"""
+    output_dir = get_database_output_dir()
     if not output_dir.exists():
         output_dir.mkdir(parents=True)
     df.to_csv(output_dir / name)
 
-    logger.info(f"Written dataframe to {OUTPUT_DIR / name}")
+    logger.info(f"Written dataframe to {output_dir / name}")
 
 
-def save_df_to_parquet(df: pd.DataFrame, filename: str, output_dir: Path = OUTPUT_DIR):
+def save_df_to_parquet(df: pd.DataFrame):
     table = pa.Table.from_pandas(df)
+
+    output_dir = get_database_output_dir()
     if not output_dir.exists():
         output_dir.mkdir(parents=True)
-    filename = filename + ".parquet"
+
+    filename = get_parquet_filename()
     pq.write_table(table, output_dir / filename)
     logger.info("File saved at: {}".format(output_dir / filename))
 
-def read_df_from_parquet(
-        filename: str, columns: Optional[List[str]] = None
+
+def read_df_from_parquet(columns: Optional[List[str]] = None
 ) -> pd.DataFrame:
+    filename = get_parquet_filename()
     table = pq.read_table(filename, columns = columns)
     df = table.to_pandas()
     return df
 
+
 def main():
-    exptl_data = construct_exptl_data_df(INPUT_DIR)
-    mutations_df = construct_mutations_dataframe(IDENTITY_SPREADSHEET_PATH)
-    identity_df = construct_identity_dataframe(IDENTITY_SPREADSHEET_PATH, mutations_df)
+    exptl_data = construct_exptl_data_df()
+    mutations_df = construct_mutations_dataframe()
+    identity_df = construct_identity_dataframe(mutations_df)
 
     total_df = pd.merge(exptl_data, identity_df, on="id")
-    save_df_to_parquet(total_df, "db")
-    df = read_df_from_parquet(OUTPUT_DIR / "db.parquet")
+    save_df_to_parquet(total_df)
+    df = read_df_from_parquet()
 
-    gene_descriptions = construct_gene_description_dataframe(IDENTITY_SPREADSHEET_PATH)
+    gene_descriptions = construct_gene_description_dataframe()
     write_dataframe(gene_descriptions, f"gene_descriptions.csv")
 
-
-# %%
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.DEBUG if DEV_MODE else logging.INFO)

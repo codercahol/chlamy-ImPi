@@ -21,6 +21,8 @@ def fix_erroneous_time_points(meta_df, img_array):
     elif set(meta_df.columns) == {'Date', 'Time', 'No.', 'PAR', 'F1', "Fm'1", 'Y(II)1'}:
         # Look for cases where Fm'1 == 0 and Y(II)1 == 0, as these signify failed measurements
         meta_df["failed_measurement"] = (meta_df["Fm'1"] == 0.) & (meta_df["Y(II)1"] == 0.)
+    elif set(meta_df.columns) == {'Date', 'Time', 'No.', 'PAR', 'Y(II)1', 'Y(II)2', 'Y(II)3'}:
+        meta_df["failed_measurement"] = (meta_df["Y(II)1"] == 0.) & (meta_df["Y(II)2"] == 0.) & (meta_df["Y(II)3"] == 0.)
     else:
         print(meta_df.columns)
         raise NotImplementedError
@@ -51,3 +53,32 @@ def remove_repeated_initial_frame(img_array) -> np.array:
             img_array = img_array[:, :, 2:, ...]
 
     return img_array
+
+
+def remove_repeated_initial_frame_tif(tif: np.array) -> np.array:
+    """As above, but for raw tif files which have time step in the first dimension
+    """
+    if (np.all(tif[0, ...] == tif[2, ...]) and
+        np.all(tif[3, ...] == tif[1, ...])):
+        logger.warning("Found repeated initial frame pair. Removing!")
+        tif = tif[2:, ...]
+
+    return tif
+
+
+def remove_failed_photos(tif):
+    """
+    Remove photos that are all black
+
+    Input:
+        tif: numpy array (num_images, height, width)
+    Output:
+        tif: numpy array of shape (num_images, height, width)
+    """
+    max_per_timestep = tif.max(1).max(1)
+    keep_image = max_per_timestep > 0
+
+    logger.warning(f"Discarding {sum(~keep_image)} images (indices {list(np.argwhere(~keep_image))}) which are all black")
+
+    tif = tif[keep_image]
+    return tif

@@ -26,8 +26,8 @@ def compute_threshold_mask(
     img_arr_alltime = time_reduction_fn(img_arr, axis=2)
 
     assert len(img_arr_alltime.shape) == 4
-    assert img_arr_alltime.shape[2] == 20
-    assert img_arr_alltime.shape[3] == 20
+    assert img_arr_alltime.shape[2] == 21
+    assert img_arr_alltime.shape[3] == 21
 
     mask_arr = img_arr_alltime > threshold
 

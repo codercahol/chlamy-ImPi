@@ -46,31 +46,23 @@ def spreadsheet_plate_to_numeric(plate: str) -> int:
 
 
 def parse_name(f):
-    """Parse the name of a file, e.g. `20200303 7-M4 2h-2h.npy` or `20231119 07-M3 20h ML.npy` or `20231213 9-M5_2h-2h.npy`
-
-    Thank github copilot for this very ugly function. I have added unit tests to make sure it works!
+    """Parse the name of a file, e.g. `20200303_7-M4_2h-2h.npy` or `20231119_07-M3_20h_ML.npy`
     """
     f = str(f)
-    parts = f.split(" ")
+    parts = f.split("_")
 
-    assert len(parts) in {2, 3, 4}, f
+    assert len(parts) in {3, 4}, f
 
     middle = parts[1].split("-")
     plate_num = int(middle[0])
+    measurement_num = middle[1]
 
-    if len(parts) == 2:
-        measurement_num = middle[1].split("_")[0]
-    else:
-        measurement_num = middle[1]
-
-    if len(parts) == 2:
-        time_regime = parts[1].split("_")[1].split(".")[0]
-    elif len(parts) == 3:
+    if len(parts) == 3:
         assert len(parts[2].split(".")) == 2, f
         time_regime = parts[2].split(".")[0]
     else:
         assert len(parts[3].split(".")) == 2, f
-        time_regime = parts[2] + " " + parts[3].split(".")[0]
+        time_regime = parts[2] + "_" + parts[3].split(".")[0]
 
     assert plate_num in {99, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10}, f
     assert re.match(r"M[1-6]", measurement_num), f
@@ -79,8 +71,8 @@ def parse_name(f):
         "1min-1min",
         "10min-10min",
         "2h-2h",
-        "20h ML",
-        "20h HL",
+        "20h_ML",
+        "20h_HL",
     }, f"{time_regime}, {f}"
 
     return plate_num, measurement_num, time_regime
