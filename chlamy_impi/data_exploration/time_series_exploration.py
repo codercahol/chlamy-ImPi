@@ -2,28 +2,25 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from pathlib import Path
+import pyarrow.parquet as pq
 
 
-OUTDIR = Path("./../../output/data_exploration/v1")
+def read_df_from_parquet(columns: list[str] = None
+                         ) -> pd.DataFrame:
+    filename = "./../../output/database_creation/database.parquet"
+    table = pq.read_table(filename, columns=columns)
+    df = table.to_pandas()
+    return df
 
 
-def load_csvs():
-    outdir = Path("./../../output/database_creation/v2")
-
-    name_to_df = {}
-
-    for filename in outdir.glob("*.csv"):
-        df = pd.read_csv(filename, header=0)
-
-        name_to_df[filename.stem] = df
-
-    return name_to_df
-
-
-def plot_all_time_series(df, df_plate):
+def plot_all_time_series(df):
     # Find all plates and M#s from df_plate first
-    plates = df_plate["plate"].unique()
-    measurements = df_plate["measurement"].unique()
+    plates = df["plate"].unique()
+    measurements = df["measurement"].unique()
+
+    print(plates)
+    print(measurements)
+    assert 0
 
     # For each plate and measurement, plot all time series if the data exists
     for plate in plates:
@@ -32,14 +29,40 @@ def plot_all_time_series(df, df_plate):
 
             if len(df_subset) > 0:
                 light_treatment = \
-                    df_plate[(df_plate["plate"] == plate) & (df_plate["measurement"] == m)]["light_regime"].values[0]
-                time_series_filename = OUTDIR / f"raw_timeseries_{plate}_{m}.png"
+                    df[(df["plate"] == plate) & (df["measurement"] == m)]["light_regime"].values[0]
+
+                time_series_filename = Path("./../../output/data_exploration/v1") / f"npq_and_y2_timeseries_{plate}_{m}.png"
                 plot_both_time_series(df_subset, plate, m, light_treatment, time_series_filename)
+                print(f"Plot written to {time_series_filename}")
+
+                time_series_filename = Path(
+                    "./../../output/data_exploration/v1") / f"y2_timeseries_{plate}_{m}.png"
+                plot_y2_time_series(df_subset, plate, m, light_treatment, time_series_filename)
                 print(f"Plot written to {time_series_filename}")
 
             else:
                 print(f"No data for plate {plate} measurement {m}")
 
+
+def plot_y2_time_series(df, plate, m, treatment, filename):
+    y2_cols = [f"y2_{i}" for i in range(1, 82)]
+
+    fig, ax = plt.subplots(1, 1, figsize=(8, 6))
+    for i, row in df.iterrows():
+        y2_vals = row[y2_cols].values
+        ax.plot(y2_vals, color="black", alpha=0.2)
+
+    ax.set_ylim(-0.2, 1)
+    ax.set_xlabel("Time point")
+    ax.set_ylabel("Y(II)")
+    ax.set_title(f"Y(II) time series for plate {plate} measurement {m}: {treatment}")
+
+    # Only have bounding box on bottom left
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+
+    fig.savefig(filename)
+    plt.close(fig)
 
 
 def plot_both_time_series(df, plate, m, treatment, filename):
@@ -67,21 +90,10 @@ def plot_both_time_series(df, plate, m, treatment, filename):
 
 
 def main():
-    name_to_df = load_csvs()
+    df = read_df_from_parquet()
+    print(df.head())
 
-    if not OUTDIR.exists():
-        OUTDIR.mkdir(parents=True, exist_ok=True)
-
-    for name, df in name_to_df.items():
-        print(name)
-        print(df.head())
-        print()
-
-    # Extract 5-M6 rows from the image feature df
-    df = name_to_df["image_features"]
-    df_plate = name_to_df["plate_info"]
-
-    plot_all_time_series(df, df_plate)
+    plot_all_time_series(df)
 
     assert 0
 
