@@ -18,10 +18,6 @@ def plot_all_time_series(df):
     plates = df["plate"].unique()
     measurements = df["measurement"].unique()
 
-    print(plates)
-    print(measurements)
-    assert 0
-
     # For each plate and measurement, plot all time series if the data exists
     for plate in plates:
         for m in measurements:
