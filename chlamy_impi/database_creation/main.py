@@ -18,12 +18,10 @@ The database will have five tables:
 
 from itertools import product
 import logging
-from typing import List, Optional
+from typing import List
 
 import pandas as pd
 import numpy as np
-import pyarrow as pa
-import pyarrow.parquet as pq
 
 from chlamy_impi.database_creation.error_correction import (
     fix_erroneous_time_points,
@@ -33,14 +31,13 @@ from chlamy_impi.database_creation.utils import (
     index_to_location_rowwise,
     parse_name,
     spreadsheet_plate_to_numeric,
-    compute_measurement_times,
+    compute_measurement_times, save_df_to_parquet,
 )
 from chlamy_impi.lib.fv_fm_functions import compute_all_fv_fm_averaged
 from chlamy_impi.lib.mask_functions import compute_threshold_mask
 from chlamy_impi.lib.npq_functions import compute_all_npq_averaged
 from chlamy_impi.lib.y2_functions import compute_all_y2_averaged
-from chlamy_impi.paths import get_npy_and_csv_filenames, get_identity_spreadsheet_path, get_database_output_dir, \
-    get_parquet_filename
+from chlamy_impi.paths import get_npy_and_csv_filenames, get_identity_spreadsheet_path, get_database_output_dir
 
 logger = logging.getLogger(__name__)
 
@@ -205,6 +202,13 @@ def construct_identity_dataframe(mutation_df: pd.DataFrame, conf_threshold: int 
 
     There is a single row per plate-well ID
     (currently this corresponds also to a unique mutant ID, but won't always)
+
+    We create columns as follows:
+        - id: unique identifier for each well such as 1-A1, 12-F12, etc. (index)
+        - mutant_ID: unique identifier for each mutant
+        - num_mutations: number of genes which were mutated
+        - mutated_genes: string of comma-separated gene names which were mutated
+
     """
     identity_spreadsheet = get_identity_spreadsheet_path()
     df = pd.read_csv(identity_spreadsheet, header=0)
@@ -236,10 +240,62 @@ def construct_identity_dataframe(mutation_df: pd.DataFrame, conf_threshold: int 
 
     df["num_mutations"] = df["mutant_ID"].apply(lambda x: gene_mutation_counts[x])
 
+    # For each plate, add rows for the three WT wells
+    plates = [int(x.split("-")[0]) for x in df.index]
+    for plate in set(plates):
+        for well_pos in get_wt_well_positions():
+            # Check no well already exists at this location
+            assert f"{plate}-{well_pos}" not in df.index
+            df.loc[f"{plate}-{well_pos}"] = ["WT", "", 0]
+
+    # Add rows for wild type plate 99
+    wt_rows, wt_index = create_wt_rows()
+    df_wt = pd.DataFrame(wt_rows, index=wt_index)
+    df = pd.concat([df, df_wt], axis=0, ignore_index=False)
+
+    # Perform some final sanity checks
+    assert df["mutant_ID"].notnull().all()
+    assert df["num_mutations"].notnull().all()
+    assert df["num_mutations"].min() >= 0
+    assert df["num_mutations"].max() <= 8
+
+    # Group by the plate number (the first part of the index string)
+    plates = [int(x.split("-")[0]) for x in df.index]
+    plate_counts = pd.Series(plates).value_counts()
+    for plate, count in plate_counts.items():
+        assert count <= 384, f"Plate {plate} has {count} wells"
+
     logger.info(
         f"Constructed identity dataframe. Shape: {df.shape}. Columns: {df.columns}."
     )
+    logger.info(f"Values of num_mutations: {df.num_mutations.unique()}")
+    logger.info(f"{df.head()}")
     return df
+
+
+def create_wt_rows() -> tuple[list, list]:
+    """In this function, we create rows for the wild type plate 99"""
+    rows = []
+    index = []
+    for well in well_position_iterator():
+        row_data = {
+            "mutant_ID": "WT",
+            "num_mutations": 0,
+            "mutated_genes": "",
+        }
+        rows.append(row_data)
+        index.append(f"99-{well}")
+    return rows, index
+
+
+def get_wt_well_positions() -> list[str]:
+    return ["C12", "N3", "N22"]
+
+
+def well_position_iterator():
+    for i in range(1, 17):
+        for j in range(1, 25):
+            yield f"{chr(ord('A') + i - 1)}{j}"
 
 
 def write_dataframe(df: pd.DataFrame, name: str):
@@ -252,24 +308,28 @@ def write_dataframe(df: pd.DataFrame, name: str):
     logger.info(f"Written dataframe to {output_dir / name}")
 
 
-def save_df_to_parquet(df: pd.DataFrame):
-    table = pa.Table.from_pandas(df)
+def merge_identity_and_experimental_dfs(exptl_data, identity_df):
 
-    output_dir = get_database_output_dir()
-    if not output_dir.exists():
-        output_dir.mkdir(parents=True)
+    # Verify that all ids in exptl data are present in identity df except *-A1
+    plates = set(int(x.split("-")[0]) for x in exptl_data.index)
+    assert np.all(exptl_data.index.isin(list(identity_df.index) + [f"{x}-A1" for x in plates - {99}])), exptl_data.index[
+        ~exptl_data.index.isin(list(identity_df.index) + [f"{x}-A1" for x in plates - {99}])
+    ]
 
-    filename = get_parquet_filename()
-    pq.write_table(table, output_dir / filename)
-    logger.info("File saved at: {}".format(output_dir / filename))
+    total_df = pd.merge(exptl_data, identity_df, left_index=True, right_index=True)
+    logger.info(f"Shape of total_df: {total_df.shape}, Columns: {total_df.columns}")
+    logger.info(total_df.head())
 
+    logger.info(f"After merge, we have data for plates: {total_df.plate.unique()}")
+    logger.info(f"After merge, we have data for light regimes: {total_df.light_regime.unique()}")
+    logger.info(f"After merge, we have data for measurement numbers: {total_df.measurement.unique()}")
 
-def read_df_from_parquet(columns: Optional[List[str]] = None
-) -> pd.DataFrame:
-    filename = get_parquet_filename()
-    table = pq.read_table(filename, columns = columns)
-    df = table.to_pandas()
-    return df
+    # Verify that all ids in exptl data are still present in merge
+    assert np.all(exptl_data.index.isin(list(total_df.index) + [f"{x}-A1" for x in plates - {99}])), exptl_data.index[
+        ~exptl_data.index.isin(list(total_df.index) + [f"{x}-A1" for x in plates - {99}])
+    ]
+
+    return total_df
 
 
 def main():
@@ -277,9 +337,8 @@ def main():
     mutations_df = construct_mutations_dataframe()
     identity_df = construct_identity_dataframe(mutations_df)
 
-    total_df = pd.merge(exptl_data, identity_df, on="id")
+    total_df = merge_identity_and_experimental_dfs(exptl_data, identity_df)
     save_df_to_parquet(total_df)
-    df = read_df_from_parquet()
 
     gene_descriptions = construct_gene_description_dataframe()
     write_dataframe(gene_descriptions, f"gene_descriptions.csv")

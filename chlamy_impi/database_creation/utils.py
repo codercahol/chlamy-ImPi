@@ -1,8 +1,16 @@
 import datetime
 import re
+from typing import Optional, List
+import logging
 
 import numpy as np
 import pandas as pd
+import pyarrow as pa
+from pyarrow import parquet as pq
+
+from chlamy_impi.paths import get_database_output_dir, get_parquet_filename
+
+logger = logging.getLogger(__name__)
 
 
 def location_to_index(loc: str) -> tuple[int, int]:
@@ -42,7 +50,13 @@ def index_to_location_rowwise(x):
 def spreadsheet_plate_to_numeric(plate: str) -> int:
     """Convert a plate string, e.g. "Plate 01", to a numeric value, e.g. 1"""
     assert plate.startswith("Plate ")
-    return int(plate[6:])
+    number_str = plate[6:]
+
+    assert len(number_str) == 2
+    assert number_str[0] in "0123456789"
+    assert number_str[1] in "0123456789"
+
+    return int(number_str)
 
 
 def parse_name(f):
@@ -86,3 +100,23 @@ def compute_measurement_times(meta_df: pd.DataFrame) -> list[datetime.datetime]:
 
     assert len(meta_df) <= 82
     return meta_df["Datetime"].tolist()
+
+
+def save_df_to_parquet(df: pd.DataFrame):
+    table = pa.Table.from_pandas(df)
+
+    output_dir = get_database_output_dir()
+    if not output_dir.exists():
+        output_dir.mkdir(parents=True)
+
+    filename = get_parquet_filename()
+    pq.write_table(table, output_dir / filename)
+    logger.info("File saved at: {}".format(output_dir / filename))
+
+
+def read_df_from_parquet(columns: Optional[List[str]] = None
+) -> pd.DataFrame:
+    filename = get_parquet_filename()
+    table = pq.read_table(filename, columns = columns)
+    df = table.to_pandas()
+    return df
