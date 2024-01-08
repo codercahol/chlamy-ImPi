@@ -14,10 +14,10 @@ located at: https://drive.google.com/drive/folders/1rU8VOIdwBuDX_N6MTn0Bg5SYYb-O
 in the `data` directory in this project. Then run the image processing pipeline:
 
 ```
-python run_well_segmentation_preprocessing.py
+python well_segmentation_preprocessing/main.py
 ```
 
-This should store a bunch of `.npy` files in the `output` directory. Note- you can skip this step, and download 
+This should store a bunch of `.npy` files in the `output/well_segmentation_cache` directory. Note- you can skip this step, and download 
 the `.npy` files directly from a shared cache here: https://drive.google.com/drive/folders/1LB1znkc95zbgKAPVU2Rz4MMwbdcjtsBK
 
 
@@ -26,11 +26,12 @@ the `.npy` files directly from a shared cache here: https://drive.google.com/dri
 Run 
 
 ```
-python main.py
+python database_creation/main.py
 ```
 
-in the `database_creation` directory. This has a hardcoded input directory where it looks for .npy and corresponding .csv files, which you might need to alter.
 You can also skip this step, and download a pre-created database directly from this folder: https://drive.google.com/drive/folders/1hclnhGfkmy8Rh1l_703z4dsmeCx1DbVz 
+
+Note: see the file `paths.py` for where the code looks to read and write these file caches from.
 
 
 ## Data analysis
