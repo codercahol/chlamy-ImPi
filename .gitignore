@@ -184,3 +184,5 @@ cython_debug/
 
 output/image_processing
 data
+output/database_creation
+output/well_segmentation_cache
