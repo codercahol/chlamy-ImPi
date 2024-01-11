@@ -15,10 +15,13 @@ The database will have five tables:
     - mutations: contains information about the mutations in each mutant, such as disrupted gene name, type, confidence level, etc.
     - gene_descriptions: contains lengthy descriptions of each gene
 """
+# %%
+
+%load_ext autoreload
+%autoreload 2
 
 from itertools import product
 import logging
-from typing import List
 
 import pandas as pd
 import numpy as np
@@ -57,31 +60,7 @@ def prepare_img_array_and_df(filename_meta, filename_npy):
     return img_array, meta_df
 
 
-def get_filenames(input_dir: Path):
-    assert input_dir.exists()
-
-    filenames_npy = list(input_dir.glob("*.npy"))
-    filenames_npy.sort()
-
-    filenames_meta = [x.with_suffix(".csv") for x in filenames_npy]
-
-    if DEV_MODE:
-        filenames_npy = filenames_npy[:10]
-        filenames_meta = filenames_meta[:10]
-        logger.info(f"DEV_MODE: only using {len(filenames_meta)} files")
-
-    # Check that these two lists of filenames are the same
-    assert len(filenames_npy) == len(filenames_meta)
-    for f1, f2 in zip(filenames_npy, filenames_meta):
-        assert f1.stem == f2.stem, f"{f1.stem} != {f2.stem}"
-        assert f2.exists(), f"{f2} does not exist"
-
-    logger.info(f"Found {len(filenames_npy)} files in {INPUT_DIR}")
-
-    return filenames_meta, filenames_npy
-
-
-def construct_plate_info_df(input_dir: Path) -> pd.DataFrame:
+def construct_plate_info_df() -> pd.DataFrame:
     """construct a dataframe with the
     logistical information about each plate, such as:
     - Plate number
@@ -101,16 +80,16 @@ def construct_plate_info_df(input_dir: Path) -> pd.DataFrame:
         - Time duration of experiment corresponding to each time point
     """
 
-    filenames_meta, filenames_npy = get_filenames(input_dir)
+    filenames_meta, filenames_npy = get_npy_and_csv_filenames(dev_mode=DEV_MODE)
 
     rows = []
 
     for filename_npy, filename_meta in zip(filenames_npy, filenames_meta):
-        plate_num, measurement_num, light_regime = parse_name(filename_npy)
+        plate_num, measurement_num, light_regime = parse_name(filename_npy.name)
 
         logger.info(f"\n\n\nProcessing plate info from filename: {filename_npy.name}")
 
-        img_array, meta_df = prepare_img_array_and_df(filename_meta, filename_npy)
+        img_array, _ = prepare_img_array_and_df(filename_meta, filename_npy)
 
         assert img_array.shape[2] % 2 == 0
 
@@ -137,7 +116,7 @@ def construct_plate_info_df(input_dir: Path) -> pd.DataFrame:
     return df
 
 
-def construct_well_info_df(input_dir: Path) -> pd.DataFrame:
+def construct_well_info_df() -> pd.DataFrame:
     """construct a dataframe containing all the
     time-series data from experiments and image segmentation
      This includes image features, such as Fv/Fm, Y2, NPQ, and the times at which they were measured
@@ -164,7 +143,7 @@ def construct_well_info_df(input_dir: Path) -> pd.DataFrame:
         assert img_array.shape[2] % 2 == 0
         assert img_array.shape[2] // 2 == len(measurement_times)
 
-        mask_array, threshold = compute_threshold_mask(img_array, return_threshold=True)
+        mask_array, _ = compute_threshold_mask(img_array, return_threshold=True)
         fv_fm_array = compute_all_fv_fm_averaged(img_array, mask_array)
         y2_array = compute_all_y2_averaged(img_array, mask_array)
 
@@ -209,10 +188,6 @@ def construct_well_info_df(input_dir: Path) -> pd.DataFrame:
             rows.append(row_data)
 
     df = pd.DataFrame(rows)
-    df["id"] = df.apply(
-        lambda x: "{}-{}".format(x.plate, index_to_location_rowwise(x)), axis=1
-    )
-    df = df.set_index("id")
 
     logger.info(
         f"Constructed image features dataframe. Shape: {df.shape}. Columns: {df.columns}."
@@ -221,7 +196,20 @@ def construct_well_info_df(input_dir: Path) -> pd.DataFrame:
     return df
 
 
-def construct_gene_description_dataframe(identity_spreadsheet: Path) -> pd.DataFrame:
+def merge_plate_and_well_info_dfs(plate_df: pd.DataFrame, well_df: pd.DataFrame):
+    """ merge the plate and well info dataframes """
+    df = pd.merge(well_df, plate_df, on=["plate", "measurement"], how="left")
+    
+    df["well_id"] = df.apply(index_to_location_rowwise, axis=1)
+        #lambda x: "{}-{}-{}".format(x.plate, x.measurement, index_to_location_rowwise(x)), axis=1)
+    # df = df.set_index("full_id")
+    logger.info(
+        f"Constructed merged dataframe. Shape: {df.shape}."
+    )
+    return df
+
+
+def construct_gene_description_dataframe() -> pd.DataFrame:
     """extract all gene descriptions, and store as a separate dataframe
 
     Each gene has one description, but the descriptions are very long, so we store them separately
@@ -241,7 +229,7 @@ def construct_gene_description_dataframe(identity_spreadsheet: Path) -> pd.DataF
     return df_gene_descriptions
 
 
-def construct_mutations_dataframe(identity_spreadsheet: Path) -> pd.DataFrame:
+def construct_mutations_dataframe() -> pd.DataFrame:
     """extract all mutation features, such as gene name, location, etc.
 
     This is a separate table because each mutant_ID can have several mutations
@@ -285,13 +273,9 @@ def construct_identity_dataframe(
     assert df["New location"].notnull().all()
 
     # Collect columns which we need
-    df = df.rename(columns={"New location": "plate", "Location": "location"})
-    df = df[["mutant_ID", "plate", "location"]]
+    df = df.rename(columns={"New location": "plate", "Location": "well_id"})
+    df = df[["mutant_ID", "plate", "well_id"]]
     df["plate"] = df["plate"].apply(spreadsheet_plate_to_numeric)
-
-    # set a unique index
-    df["id"] = df.apply(lambda x: "{}-{}".format(x.plate, x.location), axis=1)
-    df = df.drop(columns=["location", "plate"])
     df = df.drop_duplicates(ignore_index=True)
 
     # Add column which tells us the number of genes which were mutated
@@ -303,21 +287,26 @@ def construct_identity_dataframe(
     )
     mutated_genes = mutated_genes.reset_index().rename(columns={0: "mutated_genes"})
     df = pd.merge(df, mutated_genes, on="mutant_ID")
-    df = df.set_index("id")
-
+    
     df["num_mutations"] = df["mutant_ID"].apply(lambda x: gene_mutation_counts[x])
 
     # For each plate, add rows for the three WT wells
-    plates = [int(x.split("-")[0]) for x in df.index]
-    for plate in set(plates):
+    for plate in df.plate.unique():
         for well_pos in get_wt_well_positions():
             # Check no well already exists at this location
             assert f"{plate}-{well_pos}" not in df.index
-            df.loc[f"{plate}-{well_pos}"] = ["WT", "", 0]
+            WT_row = {
+                "plate": plate,
+                "well_id": well_pos,
+                "mutant_ID": "WT",
+                "mutated_genes": "",
+                "num_mutations": 0,
+            }
+            df.loc[len(df)] = WT_row
 
     # Add rows for wild type plate 99
-    wt_rows, wt_index = create_wt_rows()
-    df_wt = pd.DataFrame(wt_rows, index=wt_index)
+    wt_rows = create_wt_rows()
+    df_wt = pd.DataFrame(wt_rows)
     df = pd.concat([df, df_wt], axis=0, ignore_index=False)
 
     # Perform some final sanity checks
@@ -327,8 +316,8 @@ def construct_identity_dataframe(
     assert df["num_mutations"].max() <= 8
 
     # Group by the plate number (the first part of the index string)
-    plates = [int(x.split("-")[0]) for x in df.index]
-    plate_counts = pd.Series(plates).value_counts()
+    plates = df.plate
+    plate_counts = plates.value_counts()
     for plate, count in plate_counts.items():
         assert count <= 384, f"Plate {plate} has {count} wells"
 
@@ -340,19 +329,19 @@ def construct_identity_dataframe(
     return df
 
 
-def create_wt_rows() -> tuple[list, list]:
+def create_wt_rows() -> list[dict]:
     """In this function, we create rows for the wild type plate 99"""
     rows = []
-    index = []
     for well in well_position_iterator():
         row_data = {
+            "plate": 99,
+            "well_id": well,
             "mutant_ID": "WT",
             "num_mutations": 0,
             "mutated_genes": "",
         }
         rows.append(row_data)
-        index.append(f"99-{well}")
-    return rows, index
+    return rows
 
 
 def get_wt_well_positions() -> list[str]:
@@ -376,19 +365,18 @@ def write_dataframe(df: pd.DataFrame, name: str):
 
 
 def merge_identity_and_experimental_dfs(exptl_data, identity_df):
-    # Verify that all ids in exptl data are present in identity df except *-A1
-    plates = set(int(x.split("-")[0]) for x in exptl_data.index)
-    assert np.all(
-        exptl_data.index.isin(
-            list(identity_df.index) + [f"{x}-A1" for x in plates - {99}]
-        )
-    ), exptl_data.index[
-        ~exptl_data.index.isin(
-            list(identity_df.index) + [f"{x}-A1" for x in plates - {99}]
-        )
-    ]
+    # TODO - "A1" blanks often just generate NaNs
+    # how to make them more useful? (we'd like them as a control)
 
-    total_df = pd.merge(exptl_data, identity_df, left_index=True, right_index=True)
+    # Verify that all ids in exptl data are present in identity df except *-A1
+    non_blank_wells = exptl_data.well_id[exptl_data.well_id != "A1"]
+    exptl_plate_n_well = set(product(exptl_data.plate, non_blank_wells))
+    identity_plate_n_well = set(product(identity_df.plate, identity_df.well_id))
+
+    err_msg = exptl_plate_n_well - identity_plate_n_well
+    assert exptl_plate_n_well.issubset(identity_plate_n_well), err_msg
+
+    total_df = pd.merge(exptl_data, identity_df, on=["plate", "well_id"], how="left")
     logger.info(f"Shape of total_df: {total_df.shape}, Columns: {total_df.columns}")
     logger.info(total_df.head())
 
@@ -400,20 +388,14 @@ def merge_identity_and_experimental_dfs(exptl_data, identity_df):
         f"After merge, we have data for measurement numbers: {total_df.measurement.unique()}"
     )
 
-    # Verify that all ids in exptl data are still present in merge
-    assert np.all(
-        exptl_data.index.isin(list(total_df.index) + [f"{x}-A1" for x in plates - {99}])
-    ), exptl_data.index[
-        ~exptl_data.index.isin(
-            list(total_df.index) + [f"{x}-A1" for x in plates - {99}]
-        )
-    ]
-
     return total_df
 
 
 def main():
-    exptl_data = construct_exptl_data_df()
+    plate_data = construct_plate_info_df()
+    well_data = construct_well_info_df()
+    exptl_data = merge_plate_and_well_info_dfs(well_data, plate_data)
+    
     mutations_df = construct_mutations_dataframe()
     identity_df = construct_identity_dataframe(mutations_df)
 
@@ -424,6 +406,7 @@ def main():
     write_dataframe(gene_descriptions, f"gene_descriptions.csv")
 
 
+# %%
 if __name__ == "__main__":
     logging.basicConfig(level=logging.DEBUG if DEV_MODE else logging.INFO)
     main()

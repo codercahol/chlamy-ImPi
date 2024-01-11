@@ -11,23 +11,23 @@ logger = logging.getLogger(__name__)
 
 # The following group of functions are all possible ways to generate an array of masks, given an image array
 
+
 def compute_threshold_mask(
-        img_arr: np.array,
-        num_std: float = 3,
-        use_opening: bool = False,
-        time_reduction_fn: Callable = np.min,
-        return_threshold: bool = False
+    img_arr: np.array,
+    num_std: float = 3,
+    use_opening: bool = False,
+    time_reduction_fn: Callable = np.min,
+    return_threshold: bool = False,
 ) -> np.array:
-    """Function to compute a threshold-based mask array (i.e. masks all wells in a single plate)
-    """
+    """Function to compute a threshold-based mask array (i.e. masks all wells in a single plate)"""
     assert len(img_arr.shape) == 5
 
     threshold = compute_std_threshold(img_arr, num_std)
     img_arr_alltime = time_reduction_fn(img_arr, axis=2)
 
     assert len(img_arr_alltime.shape) == 4
-    assert img_arr_alltime.shape[2] == 21
-    assert img_arr_alltime.shape[3] == 21
+    assert img_arr_alltime.shape[2] == img_arr.shape[3]
+    assert img_arr_alltime.shape[3] == img_arr.shape[4]
 
     mask_arr = img_arr_alltime > threshold
 
@@ -42,8 +42,7 @@ def compute_threshold_mask(
 
 
 def compute_std_threshold(img_arr, num_std: float = 3.0):
-    """Compute the background threshold, designed to be robust to case where there is not a blank in the top left
-    """
+    """Compute the background threshold, designed to be robust to case where there is not a blank in the top left"""
     assert len(img_arr.shape) == 5
 
     # First determine if top left well is indeed blank
@@ -102,8 +101,7 @@ def count_overlapping_masks(mask_array) -> int:
 
 
 def has_true_on_boundary(arr):
-    """Check if mask reaches edge of cell - should always be false
-    """
+    """Check if mask reaches edge of cell - should always be false"""
 
     # Check the top and bottom rows
     if np.any(arr[0, :]) or np.any(arr[-1, :]):
@@ -116,13 +114,13 @@ def has_true_on_boundary(arr):
     return False
 
 
-
-
 def get_disk_mask(img_array):
     disk_radius = min(img_array.shape[-2:]) // 2
     disk_mask = morphology.disk(radius=disk_radius, dtype=bool)
     if disk_mask.shape[0] > img_array.shape[3]:
-        assert img_array.shape[3] == img_array.shape[4]  # Check assumption of square cells
+        assert (
+            img_array.shape[3] == img_array.shape[4]
+        )  # Check assumption of square cells
         disk_mask = disk_mask[:-1, :-1]
     assert disk_mask.shape == img_array.shape[-2:]
     return disk_mask
