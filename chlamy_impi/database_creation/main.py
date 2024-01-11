@@ -89,27 +89,69 @@ def get_filenames(input_dir: Path):
     return filenames_meta, filenames_npy
 
 
-def construct_exptl_data_df(input_dir: Path) -> pd.DataFrame:
-    """In this function, we construct a dataframe containing all the
-     experimental data from experiments and image segmentation
-      This includes image features, such as Fv/Fm, Y2, NPQ
-
-    This also includes:
+def construct_plate_info_df(input_dir: Path) -> pd.DataFrame:
+    """ construct a dataframe with the 
+        logistical information about each plate, such as:
         - Plate number
         - Start date
         - Light regime
-        - Threshold
+        - Threshold of masks
         - Number of frames
-        - Measurement times
+        
+        Information applies to plates (not each well)
+
+        TODO: add remaining columns:
+            - Was there an issue?
+            - Temperature under camera (avg, max, min)
+            - Temperature in algae house
+            - # days M plate grown
+            - # days S plate grown
+            - Time duration of experiment corresponding to each time point
+     """
+    
+    filenames_meta, filenames_npy = get_filenames(input_dir)
+
+    rows = []
+
+    for filename_npy, filename_meta in zip(filenames_npy, filenames_meta):
+        plate_num, measurement_num, light_regime = parse_name(filename_npy)
+
+        logger.info(
+            f"\n\n\nProcessing plate info from filename: {filename_npy.name}"
+        )
+
+        img_array, meta_df = prepare_img_array_and_df(filename_meta, filename_npy)
+
+        assert img_array.shape[2] % 2 == 0
+
+        _, threshold = compute_threshold_mask(img_array, return_threshold=True)
+
+        row_data = {
+            "plate": plate_num,
+            "measurement": measurement_num,
+            "light_regime": light_regime,
+            "threshold": threshold,
+            # TODO: add dark threshold
+            "num_frames": img_array.shape[2],
+        }
+
+        rows.append(row_data)
+    
+    df = pd.DataFrame(rows)
+
+    logger.info(
+        f"Constructed plate info dataframe. Shape: {df.shape}. Columns: {df.columns}."
+    )
+    logger.info(f"{df.head()}")
+
+    return df
 
 
-    TODO: add remaining experimental columns:
-     - Was there an issue?
-     - Temperature under camera (avg, max, min)
-     - Temperature in algae house
-     - # days M plate grown
-     - # days S plate grown
-     - Time duration of experiment corresponding to each time point
+def construct_well_info_df(input_dir: Path) -> pd.DataFrame:
+    """ construct a dataframe containing all the
+     time-series data from experiments and image segmentation
+      This includes image features, such as Fv/Fm, Y2, NPQ, and the times at which they were measured
+
      TODO:
      - Other quantifiers of fluorescence or shape heterogeneity
     """
@@ -147,9 +189,6 @@ def construct_exptl_data_df(input_dir: Path) -> pd.DataFrame:
                 "j": j,
                 "fv_fm": fv_fm_array[i, j],
                 "mask_area": np.sum(mask_array[i, j]),
-                "light_regime": light_regime,
-                "threshold": threshold,
-                "num_frames": img_array.shape[2],
             }
 
             assert len(y2_array[i, j]) <= 81
@@ -192,7 +231,7 @@ def construct_exptl_data_df(input_dir: Path) -> pd.DataFrame:
 
 
 def construct_gene_description_dataframe(identity_spreadsheet: Path) -> pd.DataFrame:
-    """In this function, we extract all gene descriptions, and store as a separate dataframe
+    """ extract all gene descriptions, and store as a separate dataframe
 
     Each gene has one description, but the descriptions are very long, so we store them separately
     """
@@ -211,7 +250,7 @@ def construct_gene_description_dataframe(identity_spreadsheet: Path) -> pd.DataF
 
 
 def construct_mutations_dataframe(identity_spreadsheet: Path) -> pd.DataFrame:
-    """In this function, we extract all mutation features, such as gene name, location, etc.
+    """ extract all mutation features, such as gene name, location, etc.
 
     This is a separate table because each mutant_ID can have several mutations
     """
@@ -233,7 +272,7 @@ def construct_mutations_dataframe(identity_spreadsheet: Path) -> pd.DataFrame:
 def construct_identity_dataframe(
     identity_spreadsheet: Path, mutation_df: pd.DataFrame, conf_threshold: int = 5
 ) -> pd.DataFrame:
-    """In this function, we extract all identity features, such as strain name, location, etc.
+    """ extract all identity features, such as strain name, location, etc.
 
     There is a single row per plate-well ID
     (currently this corresponds also to a unique mutant ID, but won't always)
@@ -274,7 +313,7 @@ def construct_identity_dataframe(
 
 
 def write_dataframe(df: pd.DataFrame, name: str, output_dir: Path = OUTPUT_DIR):
-    """In this function, we write the dataframe to a csv file"""
+    """ write the dataframe to a csv file"""
     if not output_dir.exists():
         output_dir.mkdir(parents=True)
     df.to_csv(output_dir / name)
