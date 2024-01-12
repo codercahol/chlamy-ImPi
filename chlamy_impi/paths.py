@@ -5,6 +5,9 @@ that a path is needed, rather than hardcoding the path somewhere else.
 from pathlib import Path
 import logging
 
+import pandas as pd
+import pyarrow.parquet as pq
+
 logger = logging.getLogger(__name__)
 
 
@@ -60,6 +63,13 @@ def get_database_output_dir():
 
 def get_parquet_filename():
     return DATABASE_DIR / "database.parquet"
+
+
+def read_df_from_parquet(columns: list[str] = None
+                         ) -> pd.DataFrame:
+    table = pq.read_table(get_parquet_filename(), columns=columns)
+    df = table.to_pandas()
+    return df
 
 
 def get_npy_and_csv_filenames(dev_mode: bool = False):
