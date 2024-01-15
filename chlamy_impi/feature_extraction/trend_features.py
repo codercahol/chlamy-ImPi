@@ -9,8 +9,15 @@ def y2_linear_trend(df):
     :returns: A Series containing the linear trend for each well
     """
     y2_cols = [col for col in df.columns if col.startswith("y2_")]
+    df = df.copy()
 
     for i, row in df[y2_cols].iterrows():
+        row = row.dropna()
+        if len(row) == 0:
+            df.loc[i, "y2_linear_trend"] = np.nan
+            continue
+
+        row = row[:-1]
         df.loc[i, "y2_linear_trend"] = np.polyfit(range(len(row)), row, 1)[0]
 
     return df["y2_linear_trend"]
@@ -22,8 +29,15 @@ def y2_quadratic_trend(df):
     :returns: A Series containing the quadratic trend for each well
     """
     y2_cols = [col for col in df.columns if col.startswith("y2_")]
+    df = df.copy()
 
     for i, row in df[y2_cols].iterrows():
+        row = row.dropna()
+        if len(row) == 0:
+            df.loc[i, "y2_linear_trend"] = np.nan
+            continue
+
+        row = row[:-1]
         df.loc[i, "y2_quadratic_trend"] = np.polyfit(range(len(row)), row, 2)[0]
 
     return df["y2_quadratic_trend"]
@@ -53,7 +67,15 @@ def y2_exponential_decay_time(df):
     y2_cols = [col for col in df.columns if col.startswith("y2_")]
 
     for i, row in df[y2_cols].iterrows():
-        params, covariance = fit_exponential_decay(row.T)
-        df.loc[i, "y2_exponential_decay_time"] = params[1]
+        row = row.dropna()
+        if len(row) == 0:
+            df.loc[i, "y2_exponential_decay_time"] = np.nan
+            continue
+        try:
+            params, covariance = fit_exponential_decay(row.T[:-1])  # Skip final entry since it is an outlier
+            df.loc[i, "y2_exponential_decay_time"] = params[1]
+        except RuntimeError:
+            df.loc[i, "y2_exponential_decay_time"] = np.nan
+            continue
 
     return df["y2_exponential_decay_time"]
