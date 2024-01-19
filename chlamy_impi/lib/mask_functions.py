@@ -3,7 +3,6 @@ import logging
 from typing import Callable
 
 import numpy as np
-from skimage import morphology
 from skimage.morphology import binary_opening
 
 logger = logging.getLogger(__name__)
@@ -17,32 +16,103 @@ def compute_threshold_mask(
     num_std: float = 3,
     use_opening: bool = False,
     time_reduction_fn: Callable = np.min,
-    return_threshold: bool = False,
+    return_thresholds: bool = False,
 ) -> np.array:
-    """Function to compute a threshold-based mask array (i.e. masks all wells in a single plate)"""
+    """
+    Computes a threshold-based mask array for each well in a plate.
+    One well has the same mask for all timepoints.
+
+    Input:
+        img_arr: 5D numpy array of shape (num_rows, num_columns, num_timepoints, height, width)
+        num_std: number of standard deviations above the mean to use as the threshold
+        use_opening: whether to perform a morphological opening operation on the mask
+        time_reduction_fn: function to reduce the time dimension to a single image
+        return_threshold: whether to return the threshold value
+
+    Output:
+        mask_arr: 4D numpy array of shape (num_rows, num_columns, height, width)
+    """
     assert len(img_arr.shape) == 5
+    crop_dims = img_arr.shape[-2:]
 
-    threshold = compute_std_threshold(img_arr, num_std)
-    img_arr_alltime = time_reduction_fn(img_arr, axis=2)
+    thresholds = compute_thresholds(img_arr, num_std)
+    dark_threshold, light_threshold = thresholds
 
-    assert len(img_arr_alltime.shape) == 4
-    assert img_arr_alltime.shape[2] == img_arr.shape[3]
-    assert img_arr_alltime.shape[3] == img_arr.shape[4]
+    NUM_TIMESTEPS = img_arr.shape[2]
+    dark_idxs = range(0, NUM_TIMESTEPS, 2)
+    light_idxs = range(1, NUM_TIMESTEPS, 2)
 
-    mask_arr = img_arr_alltime > threshold
+    dark_imgs_alltime = time_reduction_fn(img_arr[:, :, dark_idxs], axis=2)
+    light_imgs_alltime = time_reduction_fn(img_arr[:, :, light_idxs], axis=2)
+
+    assert len(dark_imgs_alltime.shape) == 4
+    assert len(light_imgs_alltime.shape) == 4
+    assert dark_imgs_alltime.shape[2] == crop_dims[0]
+    assert dark_imgs_alltime.shape[3] == crop_dims[1]
+    assert light_imgs_alltime.shape[2] == crop_dims[0]
+    assert light_imgs_alltime.shape[3] == crop_dims[1]
+
+    dark_mask = dark_imgs_alltime > dark_threshold
+    light_mask = light_imgs_alltime > light_threshold
+    total_mask = dark_mask & light_mask
 
     if use_opening:
         for i, j in itertools.product(range(img_arr.shape[0]), range(img_arr.shape[1])):
-            mask_arr[i, j] = binary_opening(mask_arr[i, j])
+            total_mask[i, j] = binary_opening(total_mask[i, j])
 
-    if return_threshold:
-        return mask_arr, threshold
+    if return_thresholds:
+        return total_mask, (dark_threshold, light_threshold)
     else:
-        return mask_arr
+        return total_mask
 
 
-def compute_std_threshold(img_arr, num_std: float = 3.0):
-    """Compute the background threshold, designed to be robust to case where there is not a blank in the top left"""
+def compute_thresholds(img_arr, num_std: float = 3.0, lighting="both"):
+    """
+    Computes the background threshold in the light and dark conditions
+
+    Input:
+        img_arr: 5D numpy array of shape (num_rows, num_columns, num_timepoints, height, width)
+        num_std: number of standard deviations above the mean to use as the threshold
+        lighting: "both" (compute 2 thresholds) or "all" (compute 1 threshold)
+    Output:
+        threshold: tuple of length 2, (dark_threshold, light_threshold)
+            or tuple of length 2, (threshold, None)
+    """
+    assert len(img_arr.shape) == 5
+
+    NUM_TIMESTEPS = img_arr.shape[2]
+    dark_idxs = range(0, NUM_TIMESTEPS, 2)
+    light_idxs = range(1, NUM_TIMESTEPS, 2)
+
+    dark_img_brightness = np.mean(img_arr[:, :, dark_idxs])
+    light_img_brightness = np.mean(img_arr[:, :, light_idxs])
+    # verify that the dark images are darker than the light images
+    assert light_img_brightness > dark_img_brightness
+
+    if lighting == "both":
+        logger.info("Computing dark and light thresholds")
+        dark_threshold = _compute_threshold(img_arr[:, :, dark_idxs], num_std)
+        logger.info(f"Dark threshold = {dark_threshold}")
+
+        light_threshold = _compute_threshold(img_arr[:, :, light_idxs], num_std)
+        logger.info(f"Light threshold = {light_threshold}")
+        out = (dark_threshold, light_threshold)
+    elif lighting == "all":
+        logger.info("Computing threshold using all images")
+        threshold = _compute_threshold(img_arr, num_std)
+        logger.info(f"Threshold = {threshold}")
+        out = (threshold, None)
+    else:
+        raise ValueError("lighting must be 'both' or 'all'")
+
+    return out
+
+
+def _compute_threshold(img_arr, num_std: float = 3.0):
+    """
+    Computes the background threshold
+    Robust to case where there is not a blank in the top left
+    """
     assert len(img_arr.shape) == 5
 
     # First determine if top left well is indeed blank
@@ -57,7 +127,6 @@ def compute_std_threshold(img_arr, num_std: float = 3.0):
         threshold = np.median(img_arr)
     else:
         threshold = top_left_avg + num_std * np.std(img_arr[0, 0])
-
     return threshold
 
 
@@ -114,13 +183,34 @@ def has_true_on_boundary(arr):
     return False
 
 
-def get_disk_mask(img_array):
-    disk_radius = min(img_array.shape[-2:]) // 2
-    disk_mask = morphology.disk(radius=disk_radius, dtype=bool)
-    if disk_mask.shape[0] > img_array.shape[3]:
-        assert (
-            img_array.shape[3] == img_array.shape[4]
-        )  # Check assumption of square cells
-        disk_mask = disk_mask[:-1, :-1]
-    assert disk_mask.shape == img_array.shape[-2:]
-    return disk_mask
+def get_disk_mask(img_array, radius_fraction=1):
+    """
+    Computes an identical disk mask based on the dimensions of the
+    input image array.
+
+    Input:
+        img_array: 5D numpy array of shape (num_rows, num_columns, num_timepoints, height, width)
+        radius_fraction: float between 0 and 1. Fraction of the maximum disk radius
+            to use for the mask.
+    Output:
+        disk_mask: 2D numpy boolean array of shape (height, width)
+    """
+    assert (
+        radius_fraction <= 1 and radius_fraction > 0,
+        "radius_fraction must be between 0 and 1",
+    )
+    crop_dims = img_array.shape[-2:]
+    CELL_WIDTH_X = crop_dims[0]
+    CELL_WIDTH_Y = crop_dims[1]
+    max_disk_radius = min(crop_dims) // 2
+    disk_radius = int(radius_fraction * max_disk_radius)
+    mask = np.zeros((CELL_WIDTH_X, CELL_WIDTH_Y), dtype=bool)
+    for i in range(CELL_WIDTH_X):
+        for j in range(CELL_WIDTH_Y):
+            # formula for a circle centered at the center of the rectangle
+            # with the given dimensions
+            if (i - CELL_WIDTH_X / 2) ** 2 + (j - CELL_WIDTH_Y / 2) ** 2 < (
+                disk_radius
+            ) ** 2:
+                mask[i, j] = 1
+    return mask

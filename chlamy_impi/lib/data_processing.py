@@ -235,43 +235,7 @@ def visualise_channels(tif, savedir, max_channels=None):
     plt.close(fig)
 
 
-# TODO - check it works with the way I've been handling files
-def validate_well_mask_array(mask_array) -> int:
-    """Perform some checks on the well masks.
-
-    Returns the number of well masks which overlap with the boundary of the sub-image of the well.
-    """
-    array_shape = mask_array.shape
-    arr = np.zeros_like(mask_array[:, :, 0, 0])
-
-    for i, j in itertools.product(range(array_shape[0]), range(array_shape[1])):
-        if has_true_on_boundary(mask_array[i, j]):
-            logger.warning(f"Mask {i},{j} has hit boundary")
-            arr[i, j] = True
-
-    num_overlapping = np.sum(arr)
-
-    # assert num_overlapping <= 3, f"We have found overlapping masks for {num_overlapping} masks"
-    logger.info(f"We have found overlapping masks for {num_overlapping} masks")
-
-    return num_overlapping
-
-
-# TODO - check it works with the way I've been handling files
-def has_true_on_boundary(arr):
-    """Check if mask reaches edge of cell - should always be false"""
-
-    # Check the top and bottom rows
-    if np.any(arr[0, :]) or np.any(arr[-1, :]):
-        return True
-
-    # Check the left and right columns
-    if np.any(arr[:, 0]) or np.any(arr[:, -1]):
-        return True
-
-    return False
-
-
+# DEPRECATED?
 def grid_crop(const, img, num_timesteps):
     x = torch.round(torch.linspace(const.X_MIN, const.X_MAX, const.NUM_ROWS + 1)).to(
         torch.int16
@@ -298,28 +262,6 @@ def grid_crop(const, img, num_timesteps):
     # this might be redundant, but it was in the original code
     crops = crops.contiguous()
     return crops
-
-
-def disk_mask(img_array, radius_fraction=4 / 5):
-    """
-    Create a disk-like mask
-    """
-    crop_dims = img_array.shape[-2:]
-    CELL_WIDTH_X = crop_dims[0]
-    CELL_WIDTH_Y = crop_dims[1]
-    smaller_diameter = min(crop_dims)
-    max_disk_radius = smaller_diameter // 2
-    disk_radius = int(radius_fraction * max_disk_radius)
-    mask = np.zeros((CELL_WIDTH_X, CELL_WIDTH_Y), dtype=bool)
-    for i in range(CELL_WIDTH_X):
-        for j in range(CELL_WIDTH_Y):
-            # formula for a circle centered at the center of the rectangle
-            # with the given dimensions
-            if (i - CELL_WIDTH_X / 2) ** 2 + (j - CELL_WIDTH_Y / 2) ** 2 < (
-                disk_radius
-            ) ** 2:
-                mask[i, j] = 1
-    return mask
 
 
 def generate_mask(img_array, threshold, geometry_mask):
@@ -352,22 +294,6 @@ def visualise_mask_array(mask_array, savedir):
 
 
 # TODO - review
-def count_empty_wells(mask_array):
-    """
-    Estimate the error due to misplating, which results in wells with no growing cells.
-
-    Input:
-        mask_array: 4D numpy array of shape (num_rows, num_columns, height, width)
-        num_blanks: number of blanks in the plate
-    """
-    mask_array_flat_im = mask_array.reshape(mask_array.shape[:2] + (-1,))
-    total_wells = mask_array.shape[0] * mask_array.shape[1]
-    num_good_wells = np.sum(np.max(mask_array_flat_im, axis=-1))
-    empty_wells = total_wells - num_good_wells
-    return empty_wells, total_wells
-
-
-# TODO - review
 def save_mean_array(mean_fluor_array, name):
     outfile = OUTPUT_DIR / "mean_arrays" / f"{name}.npy"
     outfile.parent.mkdir(parents=True, exist_ok=True)
@@ -391,35 +317,11 @@ def save_mean_array(mean_fluor_array, name):
     logger.info(f"Mean fluorescence array saved out to: {outfile}")
 
 
-def estimate_noise_threshold(img_array, lighting="all", n_stdDevs=5):
-    NUM_TIMESTEPS = img_array.shape[0]
-    if lighting == "dark":
-        logger.info("Using DARK images to compute threshold")
-        subset_idxs = range(0, NUM_TIMESTEPS, 2)
-    elif lighting == "light":
-        logger.info("Using LIGHT images to compute threshold")
-        subset_idxs = range(1, NUM_TIMESTEPS, 2)
-    elif lighting == "all":
-        logger.info("Using ALL images to compute threshold")
-        subset_idxs = range(0, NUM_TIMESTEPS)
-    mean = img_array[0, 0, subset_idxs].mean()
-    std = img_array[0, 0, subset_idxs].std()
-    threshold = mean + n_stdDevs * std
-    logger.info(
-        f"Computed threshold using blank control. mean : {mean}, std {std}, threshold {threshold}"
-    )
-    return threshold
-
-
 def normalize(img):
     """
     Normalize an image to the range [0, 1]
     """
     return (img - img.min()) / (img.max() - img.min())
-
-
-def mean_fluorescences_by_pixel():
-    return
 
 
 def load_strain_names(
@@ -469,35 +371,3 @@ def reassemble_crops(const, crops, num_timesteps):
                 j * const.CELL_WIDTH_Y : (j + 1) * const.CELL_WIDTH_Y,
             ] = crops[:, i, j]
     return img
-
-
-def join_strain_IDs_w_param_data(param_data, param_name, strain_IDs, WT_set):
-    merged_df = pd.DataFrame(
-        columns=["strain", param_name, "WT", "time", "strain_replicate"]
-    )
-    ts = utils.time_series(param_data)
-    n = len(ts)
-    strain_replicates = dict()
-    for i in range(const.NUM_ROWS):
-        for j in range(const.NUM_COLUMNS):
-            strain_name = strain_IDs.iloc[i, j]
-            if strain_name in strain_replicates:
-                strain_replicates[strain_name] += 1
-            else:
-                strain_replicates[strain_name] = 1
-            if strain_name in WT_set:
-                WT = True
-            else:
-                WT = False
-            values = param_data[:, i, j].numpy()
-            new_subdf = pd.DataFrame(
-                {
-                    "strain": n * [strain_name],
-                    param_name: values,
-                    "WT": n * [WT],
-                    "time": ts,
-                    "strain_replicate": n * [strain_replicates[strain_name]],
-                }
-            )
-            merged_df = pd.concat([merged_df, new_subdf], ignore_index=True)
-    return merged_df
