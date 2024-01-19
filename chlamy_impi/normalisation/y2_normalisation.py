@@ -1,3 +1,4 @@
+# %%
 import pandas as pd
 from matplotlib import pyplot as plt
 
@@ -45,7 +46,12 @@ def get_normalised_y2_df() -> pd.DataFrame:
     assert scale_facs.max() < 1.1
 
     # Merge back with original df
-    df = df.merge(scale_facs, on=["plate", "measurement"], suffixes=("", "_scale_fac"), validate="m:1")
+    df = df.merge(
+        scale_facs,
+        on=["plate", "measurement"],
+        suffixes=("", "_scale_fac"),
+        validate="m:1",
+    )
 
     # Multiply each y2 column by the scale factor and store in new dataframe
     cols = [f"y2_{i}" for i in range(1, 82)] + ["fv_fm"]
@@ -54,7 +60,11 @@ def get_normalised_y2_df() -> pd.DataFrame:
         df_scaled[col] = df_scaled[col] * df_scaled[f"fv_fm_scale_fac"]
 
     # Check that the averaged fv_fm values are now all equal to the normalisation value
-    fvfm_means = df_scaled[df_scaled["mutant_ID"] == "WT"].groupby(["plate", "measurement"])["fv_fm"].mean()
+    fvfm_means = (
+        df_scaled[df_scaled["mutant_ID"] == "WT"]
+        .groupby(["plate", "measurement"])["fv_fm"]
+        .mean()
+    )
     assert abs(fvfm_means - norm_value).max() < 1e-6
 
     return df_scaled
@@ -65,7 +75,7 @@ def main():
     # the effect of normalising using these values
 
     # Do not truncate pandas output
-    pd.set_option('display.max_columns', None)
+    pd.set_option("display.max_columns", None)
 
     df = get_y2_df()
 
@@ -94,16 +104,23 @@ def main():
     plot_rescaled_data_means(df)
 
 
-
 def plot_rescaled_data_all(df_scaled):
     # Plot the Y(II) time series by plate, separately for WT and non-WT cells
     plt.rcParams["text.usetex"] = True
     plt.rcParams["font.family"] = "Computer Modern Serif"
     fig, axs = plt.subplots(2, 2, figsize=(12, 12), sharey=True, sharex=True)
-    df1 = df_scaled[(df_scaled["mutant_ID"] == "WT") & (df_scaled["light_regime"] == "20h_HL")]
-    df2 = df_scaled[(df_scaled["mutant_ID"] != "WT") & (df_scaled["light_regime"] == "20h_HL")]
-    df3 = df_scaled[(df_scaled["mutant_ID"] == "WT") & (df_scaled["light_regime"] == "20h_ML")]
-    df4 = df_scaled[(df_scaled["mutant_ID"] != "WT") & (df_scaled["light_regime"] == "20h_ML")]
+    df1 = df_scaled[
+        (df_scaled["mutant_ID"] == "WT") & (df_scaled["light_regime"] == "20h_HL")
+    ]
+    df2 = df_scaled[
+        (df_scaled["mutant_ID"] != "WT") & (df_scaled["light_regime"] == "20h_HL")
+    ]
+    df3 = df_scaled[
+        (df_scaled["mutant_ID"] == "WT") & (df_scaled["light_regime"] == "20h_ML")
+    ]
+    df4 = df_scaled[
+        (df_scaled["mutant_ID"] != "WT") & (df_scaled["light_regime"] == "20h_ML")
+    ]
     cols = ["fv_fm"] + [f"y2_{i}" for i in range(1, 82)]
     xrange = range(82)
 
@@ -138,7 +155,10 @@ def plot_rescaled_data_all(df_scaled):
         ax.plot(xrange, row[cols], color=plate_colors[row["plate"]], alpha=0.1)
 
     # Add legend for plates
-    handles = [plt.Line2D([0, 0], [0, 0], color=plate_colors[i], marker='o', linestyle='') for i in plates]
+    handles = [
+        plt.Line2D([0, 0], [0, 0], color=plate_colors[i], marker="o", linestyle="")
+        for i in plates
+    ]
     labels = [f"Plate {i}" for i in plates]
 
     # Remove all top and right borders
@@ -146,7 +166,7 @@ def plot_rescaled_data_all(df_scaled):
         ax.spines["top"].set_visible(False)
         ax.spines["right"].set_visible(False)
     # Place legend on right hand side in the middle, vertically centred
-    fig.legend(handles, labels, loc='center right', bbox_to_anchor=(1.0, 0.5))
+    fig.legend(handles, labels, loc="center right", bbox_to_anchor=(1.0, 0.5))
     plt.show()
 
 
@@ -155,10 +175,18 @@ def plot_rescaled_data_means(df_scaled):
     plt.rcParams["text.usetex"] = True
     plt.rcParams["font.family"] = "Computer Modern Serif"
     fig, axs = plt.subplots(2, 2, figsize=(12, 12), sharey=True, sharex=True)
-    df1 = df_scaled[(df_scaled["mutant_ID"] == "WT") & (df_scaled["light_regime"] == "20h_HL")]
-    df2 = df_scaled[(df_scaled["mutant_ID"] != "WT") & (df_scaled["light_regime"] == "20h_HL")]
-    df3 = df_scaled[(df_scaled["mutant_ID"] == "WT") & (df_scaled["light_regime"] == "20h_ML")]
-    df4 = df_scaled[(df_scaled["mutant_ID"] != "WT") & (df_scaled["light_regime"] == "20h_ML")]
+    df1 = df_scaled[
+        (df_scaled["mutant_ID"] == "WT") & (df_scaled["light_regime"] == "20h_HL")
+    ]
+    df2 = df_scaled[
+        (df_scaled["mutant_ID"] != "WT") & (df_scaled["light_regime"] == "20h_HL")
+    ]
+    df3 = df_scaled[
+        (df_scaled["mutant_ID"] == "WT") & (df_scaled["light_regime"] == "20h_ML")
+    ]
+    df4 = df_scaled[
+        (df_scaled["mutant_ID"] != "WT") & (df_scaled["light_regime"] == "20h_ML")
+    ]
     cols = ["fv_fm"] + [f"y2_{i}" for i in range(1, 82)]
     xrange = range(82)
 
@@ -197,7 +225,10 @@ def plot_rescaled_data_means(df_scaled):
         ax.plot(xrange, row[cols], color=plate_colors[i], alpha=1)
 
     # Add legend for plates
-    handles = [plt.Line2D([0, 0], [0, 0], color=plate_colors[i], marker='o', linestyle='') for i in plates]
+    handles = [
+        plt.Line2D([0, 0], [0, 0], color=plate_colors[i], marker="o", linestyle="")
+        for i in plates
+    ]
     labels = [f"Plate {i}" for i in plates]
 
     # Remove all top and right borders
@@ -205,14 +236,18 @@ def plot_rescaled_data_means(df_scaled):
         ax.spines["top"].set_visible(False)
         ax.spines["right"].set_visible(False)
     # Place legend on right hand side in the middle, vertically centred
-    fig.legend(handles, labels, loc='center right', bbox_to_anchor=(1.0, 0.5))
+    fig.legend(handles, labels, loc="center right", bbox_to_anchor=(1.0, 0.5))
     plt.show()
 
 
 def plot_fv_fm_distribution(df_wt):
     plt.rcParams["text.usetex"] = True
     plt.rcParams["font.family"] = "Computer Modern Serif"
-    fvfm_means = df_wt.groupby(["plate", "measurement"])["fv_fm"].mean().plot.hist(bins=10, density=True)
+    fvfm_means = (
+        df_wt.groupby(["plate", "measurement"])["fv_fm"]
+        .mean()
+        .plot.hist(bins=10, density=True)
+    )
     fvfm_means = df_wt.groupby(["plate", "measurement"])["fv_fm"].mean().plot.kde()
     plt.xlabel("Fv/Fm")
     ax = plt.gca()
@@ -223,25 +258,27 @@ def plot_fv_fm_distribution(df_wt):
 
 def plot_avg_fv_fm(df_non_wt, df_wt):
     # Sort by measurement_time_0
-    #df = df.sort_values(by="measurement_time_0")
+    # df = df.sort_values(by="measurement_time_0")
 
     # From each plate, measurement pair plot the fv_fm values for the WT cells
-    plt.rcParams.update({'text.usetex': True})
+    plt.rcParams.update({"text.usetex": True})
     plt.rcParams["font.family"] = "Computer Modern Serif"
     fig, axs = plt.subplots(1, 2, figsize=(8, 4), sharey=True)
     ax = axs[0]
-    df_wt.groupby(["plate", "measurement"])["fv_fm"].mean().plot(kind="bar", ax=ax,
-                                                                 yerr=df_wt.groupby(["plate", "measurement"])[
-                                                                     "fv_fm"].std())
+    df_wt.groupby(["plate", "measurement"])["fv_fm"].mean().plot(
+        kind="bar", ax=ax, yerr=df_wt.groupby(["plate", "measurement"])["fv_fm"].std()
+    )
     ax.set_ylim(0.53, 0.68)
     ax.set_ylabel("Fv/Fm")
     ax.set_title("WT Fv/Fm")
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
     ax = axs[1]
-    df_non_wt.groupby(["plate", "measurement"])["fv_fm"].mean().plot(kind="bar", ax=ax,
-                                                                     yerr=df_non_wt.groupby(["plate", "measurement"])[
-                                                                         "fv_fm"].std())
+    df_non_wt.groupby(["plate", "measurement"])["fv_fm"].mean().plot(
+        kind="bar",
+        ax=ax,
+        yerr=df_non_wt.groupby(["plate", "measurement"])["fv_fm"].std(),
+    )
     ax.set_ylim(0.53, 0.68)
     ax.set_ylabel("Fv/Fm")
     ax.set_title("Mutant Fv/Fm")
@@ -250,6 +287,8 @@ def plot_avg_fv_fm(df_non_wt, df_wt):
     fig.tight_layout()
     plt.show()
 
+
+# %%
 
 if __name__ == "__main__":
     main()
