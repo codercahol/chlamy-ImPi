@@ -27,11 +27,15 @@ def main():
     mutant_series, wt_indices, wt_series = separate_mutants_and_wt(df)
 
     # I need to reduce the number of samples considered here, because the GP is too slow - random sample a subset
-    wt_series_subset = wt_series.sample(10)
+    wt_series_subset = wt_series.sample(50)
 
     # Cut the first and last columns, the discontinuity is difficult to model with a GP with a simple kernel function
     wt_series_subset = wt_series_subset.iloc[:, 1:-1]
     mutant_series = mutant_series.iloc[:, 1:-1]
+
+    # Apply a rolling average to the time series to smooth out noise (drop the nans)
+    wt_series_subset = wt_series_subset.rolling(window=9, axis=1, min_periods=9, center=True).mean().dropna(axis=1)
+    mutant_series = mutant_series.rolling(window=9, axis=1, min_periods=9, center=True).mean().dropna(axis=1)
 
     # Prepare data and label matrix of WT data, which we will fit GP to
     X = np.tile(np.linspace(0, 1, len(wt_series_subset.columns)), len(wt_series_subset)).reshape(-1, 1)
@@ -51,6 +55,9 @@ def main():
     log_likelihoods, mutant_inds, null_hypothesis_results = run_all_null_hypothesis_tests(K, mu, mutant_series)
 
     plot_least_and_most_likely_mutants(df, log_likelihoods, mutant_inds, mutant_series, null_hypothesis_results,
+                                       wt_indices, wt_series)
+
+    plot_all_mutants(df, log_likelihoods, mutant_inds, mutant_series, null_hypothesis_results,
                                        wt_indices, wt_series)
 
     # TODO: at present we aren't filtering out mutants which have inconsistent replicates
@@ -102,6 +109,29 @@ def plot_least_and_most_likely_mutants(df, log_likelihoods, mutant_inds, mutant_
     print(
         f"Genes for bottom-{N}: {[df.loc[mutant_series.loc[mutant_inds[i]].name, 'mutated_genes'] for i in bottom_inds]}")
 
+
+def plot_all_mutants(df, log_likelihoods, mutant_inds, mutant_series, null_hypothesis_results,
+                                       wt_indices, wt_series):
+    """Plot the original time series for the WT, and all mutants
+    """
+    top_inds = np.nonzero(null_hypothesis_results)[0]
+    significant_difference_inds = np.nonzero(np.logical_not(null_hypothesis_results))[0]
+
+    # Plot all the WT time series
+    fig, ax = plt.subplots(1, 1, figsize=(10, 5))
+    for i in wt_indices:
+        ax.plot(wt_series.loc[i].iloc[1:-1], color="black", alpha=0.1)
+    for i in top_inds:
+        ax.plot(mutant_series.loc[mutant_inds[i]], color="red", alpha=0.3)
+    for i in significant_difference_inds:
+        ax.plot(mutant_series.loc[mutant_inds[i]], color="blue", alpha=0.3)
+
+    # Add manual labels for legend
+    ax.plot([], [], color="black", alpha=0.1, label="WT")
+    ax.plot([], [], color="red", alpha=1, label=f"No significant difference to WT")
+    ax.plot([], [], color="blue", alpha=1, label=f"Significant difference to WT")
+    ax.legend()
+    plt.show()
 
 def run_all_null_hypothesis_tests(K, mu, mutant_series):
     """For each mutant, compute the likelihood of that time series according to the GP, and run a hypothesis test
