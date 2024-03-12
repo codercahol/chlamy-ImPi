@@ -36,11 +36,18 @@ from chlamy_impi.database_creation.utils import (
     spreadsheet_plate_to_numeric,
     compute_measurement_times,
     save_df_to_parquet,
+    compute_measurement_times,
+    save_df_to_parquet,
 )
 from chlamy_impi.lib.fv_fm_functions import compute_all_fv_fm_averaged
 from chlamy_impi.lib.mask_functions import compute_threshold_mask
 from chlamy_impi.lib.npq_functions import compute_all_npq_averaged
 from chlamy_impi.lib.y2_functions import compute_all_y2_averaged
+from chlamy_impi.paths import (
+    get_npy_and_csv_filenames,
+    get_identity_spreadsheet_path,
+    get_database_output_dir,
+)
 from chlamy_impi.paths import (
     get_npy_and_csv_filenames,
     get_identity_spreadsheet_path,
@@ -253,6 +260,8 @@ def construct_mutations_dataframe() -> pd.DataFrame:
 
 def construct_identity_dataframe(
     mutation_df: pd.DataFrame, conf_threshold: int = 5
+def construct_identity_dataframe(
+    mutation_df: pd.DataFrame, conf_threshold: int = 5
 ) -> pd.DataFrame:
     """extract all identity features, such as strain name, location, etc.
 
@@ -278,6 +287,7 @@ def construct_identity_dataframe(
     df = df[["mutant_ID", "plate", "well_id"]]
     df["plate"] = df["plate"].apply(spreadsheet_plate_to_numeric)
     df = df.drop_duplicates(ignore_index=True)
+
 
     # Add column which tells us the number of genes which were mutated
     signif_mutations = mutation_df[mutation_df.confidence_level <= conf_threshold]
