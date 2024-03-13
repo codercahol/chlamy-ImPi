@@ -22,7 +22,7 @@ WELL_SEGMENTATION_DIR = PROJECT_ROOT / "output" / "well_segmentation_cache"
 # IDENTITY_SPREADSHEET_PATH is the path to the spreadsheet containing the plate identity information
 # https://docs.google.com/spreadsheets/d/1_UcLC4jbI04Rnpt2vUkSCObX8oUY6mzl/edit?usp=drive_link&ouid=108504591016316429773&rtpof=true&sd=true
 IDENTITY_SPREADSHEET_PATH = (
-    INPUT_DIR / "plate_identity" / "burlacot_lab_plate_gene_identities.csv"
+    PROJECT_ROOT / "data" / "plate_identity" / "burlacot_lab_plate_gene_identities.csv"
 )
 
 
