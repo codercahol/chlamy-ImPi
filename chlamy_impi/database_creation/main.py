@@ -15,10 +15,8 @@ The database will have five tables:
     - mutations: contains information about the mutations in each mutant, such as disrupted gene name, type, confidence level, etc.
     - gene_descriptions: contains lengthy descriptions of each gene
 """
-# %%
 
-%load_ext autoreload
-%autoreload 2
+# %%
 
 from itertools import product
 import logging
@@ -197,15 +195,13 @@ def construct_well_info_df() -> pd.DataFrame:
 
 
 def merge_plate_and_well_info_dfs(plate_df: pd.DataFrame, well_df: pd.DataFrame):
-    """ merge the plate and well info dataframes """
+    """merge the plate and well info dataframes"""
     df = pd.merge(well_df, plate_df, on=["plate", "measurement"], how="left")
-    
+
     df["well_id"] = df.apply(index_to_location_rowwise, axis=1)
-        #lambda x: "{}-{}-{}".format(x.plate, x.measurement, index_to_location_rowwise(x)), axis=1)
+    # lambda x: "{}-{}-{}".format(x.plate, x.measurement, index_to_location_rowwise(x)), axis=1)
     # df = df.set_index("full_id")
-    logger.info(
-        f"Constructed merged dataframe. Shape: {df.shape}."
-    )
+    logger.info(f"Constructed merged dataframe. Shape: {df.shape}.")
     return df
 
 
@@ -287,7 +283,7 @@ def construct_identity_dataframe(
     )
     mutated_genes = mutated_genes.reset_index().rename(columns={0: "mutated_genes"})
     df = pd.merge(df, mutated_genes, on="mutant_ID")
-    
+
     df["num_mutations"] = df["mutant_ID"].apply(lambda x: gene_mutation_counts[x])
 
     # For each plate, add rows for the three WT wells
@@ -395,7 +391,7 @@ def main():
     plate_data = construct_plate_info_df()
     well_data = construct_well_info_df()
     exptl_data = merge_plate_and_well_info_dfs(well_data, plate_data)
-    
+
     mutations_df = construct_mutations_dataframe()
     identity_df = construct_identity_dataframe(mutations_df)
 

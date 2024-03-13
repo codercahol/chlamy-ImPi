@@ -3,24 +3,27 @@ that a path is needed, rather than hardcoding the path somewhere else.
 """
 
 from pathlib import Path
-import logging
-
-logger = logging.getLogger(__name__)
+from loguru import logger
 
 
 PROJECT_ROOT = Path(__file__).parent.parent
 
 # INPUT DIR should contain .tif and .csv files from the camera data folder on google drive
 # https://drive.google.com/drive/folders/1rU8VOIdwBuDX_N6MTn0Bg5SYYb-Ov8zv
-INPUT_DIR = PROJECT_ROOT / "data"
+carnegie_folder = "/carnegie/data/Shared/Labs/burlacot/Fluctuation Screen TIFF and XPIM"
+if Path(carnegie_folder).exists():
+    INPUT_DIR = Path(carnegie_folder)
+else:
+    INPUT_DIR = PROJECT_ROOT / "data"
 
 # WELL_SEGMENTATION_DIR is where we save the output of the well segmentation as .npy files
 WELL_SEGMENTATION_DIR = PROJECT_ROOT / "output" / "well_segmentation_cache"
 
 # IDENTITY_SPREADSHEET_PATH is the path to the spreadsheet containing the plate identity information
 # https://docs.google.com/spreadsheets/d/1_UcLC4jbI04Rnpt2vUkSCObX8oUY6mzl/edit?usp=drive_link&ouid=108504591016316429773&rtpof=true&sd=true
-IDENTITY_SPREADSHEET_PATH = \
-    INPUT_DIR / "plate_identity" / "Identity plates in Burlacot Lab 20231221 simplified.xlsx - large-lib_rearray2.txt.csv"
+IDENTITY_SPREADSHEET_PATH = (
+    INPUT_DIR / "plate_identity" / "burlacot_lab_plate_gene_identities.csv"
+)
 
 
 # DATABASE_DIR is where we save the output of the database creation as .csv and parquet files
@@ -82,9 +85,32 @@ def get_npy_and_csv_filenames(dev_mode: bool = False):
 
     # Check that these two lists of filenames are the same
     assert len(filenames_npy) == len(filenames_meta)
-    for f1, f2 in zip(filenames_npy, filenames_meta):
+    for i, (f1, f2) in enumerate(zip(filenames_npy, filenames_meta)):
         assert f1.stem == f2.stem, f"{f1.stem} != {f2.stem}"
-        assert f2.exists(), f"{f2} does not exist"
+        try:
+            assert f2.exists(), f"{f2} does not exist"
+        except AssertionError as e:
+            logger.warning(e)
+            logger.warning("Trying again with ' ' and '_' replaced")
+            if " " in f2.name and "_" not in f2.name:
+                f2 = f2.with_name(f2.name.replace(" ", "_"))
+                assert f2.exists(), f"{f2} still does not exist"
+                filenames_meta[i] = f2
+            elif "_" in f2.name and " " not in f2.name:
+                f2 = f2.with_name(f2.name.replace("_", " "))
+                assert f2.exists(), f"{f2} still does not exist"
+                filenames_meta[i] = f2
+            elif " " in f2.name and "_" in f2.name:
+                f2 = f2.with_name(f2.name.replace(" ", "_"))
+                try:
+                    assert f2.exists(), f"{f2} still does not exist"
+                    filenames_meta[i] = f2
+                except AssertionError:
+                    f2 = f2.with_name(f2.name.replace("_", " "))
+                    assert f2.exists(), f"Can't find {f2} or variations of it."
+                    filenames_meta[i] = f2
+            else:
+                raise e
 
     logger.info(f"Found {len(filenames_npy)} files in {INPUT_DIR}")
 

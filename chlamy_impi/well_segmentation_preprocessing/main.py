@@ -5,6 +5,7 @@
 # It will automatically divide the wells in each image, and compute a mean fluorescence value for each well
 # at each time point. It will then write out this array (shape = (timepoints, rows, columns)) to a new .npy file.
 # The input and output directories are specified in chlamy_impi/paths.py
+# %%
 import logging
 
 import numpy as np
@@ -12,11 +13,23 @@ from skimage import io
 from segment_multiwell_plate import segment_multiwell_plate
 from tqdm import tqdm
 
-from chlamy_impi.database_creation.error_correction import remove_failed_photos, remove_repeated_initial_frame_tif
-from chlamy_impi.lib.visualize_well_segmentation import visualise_channels, visualise_well_histograms, \
-    visualise_grid_crop
-from chlamy_impi.paths import find_all_tif_images, well_segmentation_output_dir_path, npy_img_array_path, \
-    validate_inputs, well_segmentation_visualisation_dir_path, well_segmentation_histogram_dir_path
+from chlamy_impi.database_creation.error_correction import (
+    remove_failed_photos,
+    remove_repeated_initial_frame_tif,
+)
+from chlamy_impi.lib.visualize_well_segmentation import (
+    visualise_channels,
+    visualise_well_histograms,
+    visualise_grid_crop,
+)
+from chlamy_impi.paths import (
+    find_all_tif_images,
+    well_segmentation_output_dir_path,
+    npy_img_array_path,
+    validate_inputs,
+    well_segmentation_visualisation_dir_path,
+    well_segmentation_histogram_dir_path,
+)
 
 logger = logging.getLogger(__name__)
 logging.getLogger("matplotlib").setLevel(logging.WARNING)
@@ -36,7 +49,9 @@ def save_img_array(img_array, name):
     if not outdir.exists():
         outdir.mkdir(parents=True)
 
-    logger.info(f"Saving image array of shape {img_array.shape} to {npy_img_array_path(name)}")
+    logger.info(
+        f"Saving image array of shape {img_array.shape} to {npy_img_array_path(name)}"
+    )
     np.save(npy_img_array_path(name), img_array.astype(np.float32))
 
 
@@ -46,7 +61,9 @@ def main():
     filenames = find_all_tif_images()
 
     sep = "\n\t"
-    logger.info(f"Found a total of {len(filenames)} tif files: \n\t{sep.join(str(x) for x in filenames)}")
+    logger.info(
+        f"Found a total of {len(filenames)} tif files: \n\t{sep.join(str(x) for x in filenames)}"
+    )
 
     failed_files = []
 
@@ -67,7 +84,8 @@ def main():
                 tif,
                 peak_finder_kwargs={"peak_prominence": 1 / 25, "filter_threshold": 0.2},
                 blob_log_kwargs={"threshold": 0.12},
-                output_full=True)
+                output_full=True,
+            )
 
             # We expect all plates to be 16x24 in our study
             assert img_array.shape[0] == 16
@@ -76,9 +94,20 @@ def main():
             save_img_array(img_array, name)
 
             if OUTPUT_VISUALISATIONS:
-                visualise_channels(tif, savedir=well_segmentation_visualisation_dir_path(name))
-                visualise_well_histograms(img_array, name, savedir=well_segmentation_histogram_dir_path(name))
-                visualise_grid_crop(tif, img_array, i_vals, j_vals, well_coords, savedir=well_segmentation_visualisation_dir_path(name))
+                visualise_channels(
+                    tif, savedir=well_segmentation_visualisation_dir_path(name)
+                )
+                visualise_well_histograms(
+                    img_array, name, savedir=well_segmentation_histogram_dir_path(name)
+                )
+                visualise_grid_crop(
+                    tif,
+                    img_array,
+                    i_vals,
+                    j_vals,
+                    well_coords,
+                    savedir=well_segmentation_visualisation_dir_path(name),
+                )
 
         except AssertionError as e:
             logger.error(f"File: {filename.stem} failed an assertion: {e}")
@@ -94,3 +123,4 @@ if __name__ == "__main__":
     main()
 
 
+# %%

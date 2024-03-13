@@ -60,9 +60,13 @@ def spreadsheet_plate_to_numeric(plate: str) -> int:
 
 
 def parse_name(f):
-    """Parse the name of a file, e.g. `20200303_7-M4_2h-2h.npy` or `20231119_07-M3_20h_ML.npy`
+    """
+    Parse the name of a file, e.g. `20200303_7-M4_2h-2h.npy` or `20231119_07-M3_20h_ML.npy`
+    or `20200303 7-M4 2h-2h.npy`"
     """
     f = str(f)
+    if " " in f:
+        f = f.replace(" ", "_")
     parts = f.split("_")
 
     assert len(parts) in {3, 4}, f
@@ -78,7 +82,29 @@ def parse_name(f):
         assert len(parts[3].split(".")) == 2, f
         time_regime = parts[2] + "_" + parts[3].split(".")[0]
 
-    assert plate_num in {99, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10}, f
+    assert plate_num in {
+        99,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+    }, f
     assert re.match(r"M[1-6]", measurement_num), f
     assert time_regime in {
         "30s-30s",
@@ -114,9 +140,8 @@ def save_df_to_parquet(df: pd.DataFrame):
     logger.info("File saved at: {}".format(output_dir / filename))
 
 
-def read_df_from_parquet(columns: Optional[List[str]] = None
-) -> pd.DataFrame:
+def read_df_from_parquet(columns: Optional[List[str]] = None) -> pd.DataFrame:
     filename = get_parquet_filename()
-    table = pq.read_table(filename, columns = columns)
+    table = pq.read_table(filename, columns=columns)
     df = table.to_pandas()
     return df
