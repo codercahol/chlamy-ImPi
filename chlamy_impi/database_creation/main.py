@@ -54,7 +54,8 @@ def prepare_img_array_and_df(filename_meta, filename_npy):
     img_array = np.load(filename_npy)
     img_array = remove_repeated_initial_frame(img_array)
     meta_df = pd.read_csv(filename_meta, header=0, delimiter=";").iloc[:, :-1]
-    meta_df, img_array = fix_erroneous_time_points(meta_df, img_array)
+    names = (filename_npy.name, filename_meta.name)
+    meta_df, img_array = fix_erroneous_time_points(meta_df, img_array, names)
     return img_array, meta_df
 
 
@@ -87,7 +88,11 @@ def construct_plate_info_df() -> pd.DataFrame:
 
         logger.info(f"\n\n\nProcessing plate info from filename: {filename_npy.name}")
 
-        img_array, _ = prepare_img_array_and_df(filename_meta, filename_npy)
+        try:
+            img_array, _ = prepare_img_array_and_df(filename_meta, filename_npy)
+        except Exception:
+            logger.warning(f"Failed to process {filename_npy.name}. Skipping.")
+            continue
 
         assert img_array.shape[2] % 2 == 0
 
@@ -134,9 +139,19 @@ def construct_well_info_df() -> pd.DataFrame:
             f"\n\n\nProcessing image features from filename: {filename_npy.name}"
         )
 
-        img_array, meta_df = prepare_img_array_and_df(filename_meta, filename_npy)
+        try:
+            img_array, meta_df = prepare_img_array_and_df(filename_meta, filename_npy)
+        except Exception:
+            logger.warning(f"Failed to process {filename_npy.name}. Skipping.")
+            continue
 
-        measurement_times = compute_measurement_times(meta_df=meta_df)
+        try:
+            measurement_times = compute_measurement_times(meta_df=meta_df)
+        except Exception:
+            logger.warning(
+                f"Failed to compute measurement times for {filename_npy.name}. Skipping."
+            )
+            continue
 
         assert img_array.shape[2] % 2 == 0
         assert img_array.shape[2] // 2 == len(measurement_times)
@@ -150,6 +165,8 @@ def construct_well_info_df() -> pd.DataFrame:
         Ni, Nj = img_array.shape[:2]
 
         for i, j in product(range(Ni), range(Nj)):
+            assert type(i) == int
+            assert type(j) == int
             row_data = {
                 "plate": plate_num,
                 "measurement": measurement_num,
@@ -388,8 +405,10 @@ def merge_identity_and_experimental_dfs(exptl_data, identity_df):
 
 
 def main():
+    # TODO - save each df incrementally
     plate_data = construct_plate_info_df()
     well_data = construct_well_info_df()
+    # TODO - errors on NaNs in row column
     exptl_data = merge_plate_and_well_info_dfs(well_data, plate_data)
 
     mutations_df = construct_mutations_dataframe()

@@ -39,9 +39,10 @@ def index_to_location(i: int, j: int) -> str:
 
 
 def index_to_location_rowwise(x):
-    """Convert a zero-indexed tuple, e.g. (0, 0), to a location string, e.g. "A1" """
+    """Convert a zero-indexed tuple, e.g. (0, 0), to a location string, e.g. "A1"
+    x is a pandas series with i and j columns"""
 
-    letter = chr(ord("A") + x.i)
+    letter = chr(ord("A") + int(x.i))
     number = x.j + 1
 
     return f"{letter}{number}"

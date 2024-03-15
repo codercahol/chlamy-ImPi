@@ -85,34 +85,60 @@ def get_npy_and_csv_filenames(dev_mode: bool = False):
 
     # Check that these two lists of filenames are the same
     assert len(filenames_npy) == len(filenames_meta)
+    valid_files = []
     for i, (f1, f2) in enumerate(zip(filenames_npy, filenames_meta)):
         assert f1.stem == f2.stem, f"{f1.stem} != {f2.stem}"
         try:
             assert f2.exists(), f"{f2} does not exist"
+            valid_files.append(True)
         except AssertionError as e:
             logger.warning(e)
             logger.warning("Trying again with ' ' and '_' replaced")
             if " " in f2.name and "_" not in f2.name:
                 f2 = f2.with_name(f2.name.replace(" ", "_"))
-                assert f2.exists(), f"{f2} still does not exist"
-                filenames_meta[i] = f2
+                try:
+                    assert f2.exists(), f"{f2} still does not exist"
+                    filenames_meta[i] = f2
+                    valid_files.append(True)
+                except AssertionError as e:
+                    logger.warning(e)
+                    valid_files.append(False)
+                    continue
             elif "_" in f2.name and " " not in f2.name:
                 f2 = f2.with_name(f2.name.replace("_", " "))
-                assert f2.exists(), f"{f2} still does not exist"
-                filenames_meta[i] = f2
+                try:
+                    assert f2.exists(), f"{f2} still does not exist"
+                    filenames_meta[i] = f2
+                    valid_files.append(True)
+                except AssertionError as e:
+                    logger.warning(e)
+                    valid_files.append(False)
+                    continue
             elif " " in f2.name and "_" in f2.name:
                 f2 = f2.with_name(f2.name.replace(" ", "_"))
                 try:
                     assert f2.exists(), f"{f2} still does not exist"
                     filenames_meta[i] = f2
+                    valid_files.append(True)
                 except AssertionError:
                     f2 = f2.with_name(f2.name.replace("_", " "))
-                    assert f2.exists(), f"Can't find {f2} or variations of it."
-                    filenames_meta[i] = f2
+                    try:
+                        assert f2.exists(), f"Can't find {f2} or variations of it."
+                        filenames_meta[i] = f2
+                        valid_files.append(True)
+                    except AssertionError as e:
+                        logger.warning(e)
+                        valid_files.append(False)
+                        continue
             else:
-                raise e
+                logger.warning(e)
+                valid_files.append(False)
 
-    logger.info(f"Found {len(filenames_npy)} files in {INPUT_DIR}")
+    filenames_npy = [f for f, v in zip(filenames_npy, valid_files) if v]
+    filenames_meta = [f for f, v in zip(filenames_meta, valid_files) if v]
+    logger.info(
+        f"Found {len(filenames_npy)} valid file pairs in {INPUT_DIR} and {WELL_SEGMENTATION_DIR}"
+    )
 
     return filenames_meta, filenames_npy
 

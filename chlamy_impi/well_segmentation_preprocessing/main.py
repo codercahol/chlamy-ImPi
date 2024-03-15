@@ -6,7 +6,7 @@
 # at each time point. It will then write out this array (shape = (timepoints, rows, columns)) to a new .npy file.
 # The input and output directories are specified in chlamy_impi/paths.py
 # %%
-import logging
+from loguru import logger
 
 import numpy as np
 from skimage import io
@@ -31,9 +31,6 @@ from chlamy_impi.paths import (
     well_segmentation_histogram_dir_path,
 )
 
-logger = logging.getLogger(__name__)
-logging.getLogger("matplotlib").setLevel(logging.WARNING)
-
 
 OUTPUT_VISUALISATIONS = True
 LOGGING_LEVEL = logging.DEBUG
@@ -55,7 +52,7 @@ def save_img_array(img_array, name):
     np.save(npy_img_array_path(name), img_array.astype(np.float32))
 
 
-def main():
+def main(rewrite=False):
     logger.info("\n" + "=" * 32 + "\nStarting main.py...\n" + "=" * 32)
     validate_inputs()
     filenames = find_all_tif_images()
@@ -69,6 +66,11 @@ def main():
 
     for filename in tqdm(filenames):
         name = filename.stem
+
+        if not rewrite and npy_img_array_path(name).exists():
+            logger.info(f"Skipping {name} as it already exists")
+            continue
+
         well_segmentation_output_dir_path(name).mkdir(parents=True, exist_ok=True)
 
         try:
