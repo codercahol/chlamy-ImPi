@@ -215,6 +215,20 @@ def merge_plate_and_well_info_dfs(plate_df: pd.DataFrame, well_df: pd.DataFrame)
     """merge the plate and well info dataframes"""
     df = pd.merge(well_df, plate_df, on=["plate", "measurement"], how="left")
 
+    try:
+        assert df.i.isnull().values.any() == False
+    except AssertionError:
+        null_indices = df.i.isnull().values.nonzero()
+        null_rows = df.iloc[null_indices]
+        logger.warning(f"Found null at: {null_rows}")
+
+    try:
+        assert df.j.isnull().values.any() == False
+    except AssertionError:
+        null_indices = df.j.isnull().values.nonzero()
+        null_rows = df.iloc[null_indices]
+        logger.warning(f"Found null at: {null_rows}")
+
     df["well_id"] = df.apply(index_to_location_rowwise, axis=1)
     # lambda x: "{}-{}-{}".format(x.plate, x.measurement, index_to_location_rowwise(x)), axis=1)
     # df = df.set_index("full_id")
@@ -405,10 +419,8 @@ def merge_identity_and_experimental_dfs(exptl_data, identity_df):
 
 
 def main():
-    # TODO - save each df incrementally
     plate_data = construct_plate_info_df()
     well_data = construct_well_info_df()
-    # TODO - errors on NaNs in row column
     exptl_data = merge_plate_and_well_info_dfs(well_data, plate_data)
 
     mutations_df = construct_mutations_dataframe()

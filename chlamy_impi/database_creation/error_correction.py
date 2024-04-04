@@ -11,7 +11,9 @@ def fix_erroneous_time_points(meta_df, img_array, names):
     We need to locate and remove these single frames, and then re-align the time points to the frames by removing the
     appropriate frame from the image stack.
     """
-    # One possible column layout in the csv files
+    # a bunch of cases that cover the different data types possible in meta_df
+    # in all cases, we look for a failed measurement based on the available data
+    # and remove the corresponding frame
     if set(meta_df.columns) == {
         "Date",
         "Time",
