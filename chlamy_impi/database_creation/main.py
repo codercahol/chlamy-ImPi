@@ -96,14 +96,15 @@ def construct_plate_info_df() -> pd.DataFrame:
 
         assert img_array.shape[2] % 2 == 0
 
-        _, threshold = compute_threshold_mask(img_array, return_threshold=True)
+        _, thresholds = compute_threshold_mask(img_array, return_thresholds=True)
+        dark_threshold, light_threshold = thresholds
 
         row_data = {
             "plate": plate_num,
             "measurement": measurement_num,
             "light_regime": light_regime,
-            "threshold": threshold,
-            # TODO: add dark threshold
+            "dark_threshold": dark_threshold,
+            "light_threshold": light_threshold,
             "num_frames": img_array.shape[2],
         }
 
@@ -156,7 +157,7 @@ def construct_well_info_df() -> pd.DataFrame:
         assert img_array.shape[2] % 2 == 0
         assert img_array.shape[2] // 2 == len(measurement_times)
 
-        mask_array, _ = compute_threshold_mask(img_array, return_threshold=True)
+        mask_array = compute_threshold_mask(img_array)
         fv_fm_array = compute_all_fv_fm_averaged(img_array, mask_array)
         y2_array = compute_all_y2_averaged(img_array, mask_array)
 
