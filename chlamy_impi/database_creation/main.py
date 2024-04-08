@@ -3,10 +3,6 @@ containing all the features we need for our analysis.
 
 The script is controlled using hard-coded constants at the top of the file. These are:
     - DEV_MODE: whether to run in development mode (only use a few files)
-    - INPUT_DIR: directory containing the preprocessed image data
-    - IDENTITY_SPREADSHEET_PATH: path to the spreadsheet containing information about the identity of each well.
-        This is found at: https://docs.google.com/spreadsheets/d/1_UcLC4jbI04Rnpt2vUkSCObX8oUY6mzl/edit#gid=206647583
-    - OUTPUT_DIR: directory to write the csv files to
 
 The database will have five tables:
     - plate_info: contains information about each plate, such as plate number, light regime, etc.
@@ -15,10 +11,6 @@ The database will have five tables:
     - mutations: contains information about the mutations in each mutant, such as disrupted gene name, type, confidence level, etc.
     - gene_descriptions: contains lengthy descriptions of each gene
 """
-# %%
-
-%load_ext autoreload
-%autoreload 2
 
 from itertools import product
 import logging
@@ -27,8 +19,7 @@ import pandas as pd
 import numpy as np
 
 from chlamy_impi.database_creation.error_correction import (
-    fix_erroneous_time_points,
-    remove_repeated_initial_frame,
+    remove_repeated_initial_frame, manually_fix_erroneous_time_points,
 )
 from chlamy_impi.database_creation.utils import (
     index_to_location_rowwise,
@@ -56,7 +47,7 @@ def prepare_img_array_and_df(filename_meta, filename_npy):
     img_array = np.load(filename_npy)
     img_array = remove_repeated_initial_frame(img_array)
     meta_df = pd.read_csv(filename_meta, header=0, delimiter=";").iloc[:, :-1]
-    meta_df, img_array = fix_erroneous_time_points(meta_df, img_array)
+    meta_df, img_array = manually_fix_erroneous_time_points(meta_df, img_array, filename_npy.stem)
     return img_array, meta_df
 
 
@@ -137,17 +128,22 @@ def construct_well_info_df() -> pd.DataFrame:
             f"\n\n\nProcessing image features from filename: {filename_npy.name}"
         )
 
-        img_array, meta_df = prepare_img_array_and_df(filename_meta, filename_npy)
+        try:
+            img_array, meta_df = prepare_img_array_and_df(filename_meta, filename_npy)
+        except Exception as e:
+            logger.error(f"Error processing file {filename_npy.name}. Skipping.")
+            logger.error(e)
+            continue
 
         measurement_times = compute_measurement_times(meta_df=meta_df)
 
         assert img_array.shape[2] % 2 == 0
         assert img_array.shape[2] // 2 == len(measurement_times)
 
-        mask_array = compute_threshold_mask(img_array)
-        fv_fm_array = compute_all_fv_fm_averaged(img_array, mask_array)
-        y2_array = compute_all_y2_averaged(img_array, mask_array)
 
+        mask_array = compute_threshold_mask(img_array)
+        y2_array = compute_all_y2_averaged(img_array, mask_array)
+        fv_fm_array = compute_all_fv_fm_averaged(img_array, mask_array)
         npq_array = compute_all_npq_averaged(img_array, mask_array)
 
         Ni, Nj = img_array.shape[:2]
@@ -217,7 +213,7 @@ def construct_gene_description_dataframe() -> pd.DataFrame:
     """
     id_spreadsheet_path = get_identity_spreadsheet_path()
     assert id_spreadsheet_path.exists()
-    df = pd.read_csv(id_spreadsheet_path, header=0)
+    df = pd.read_excel(id_spreadsheet_path, header=0, engine='openpyxl')
 
     # Create new dataframe with just the gene descriptions, one for each gene
     df_gene_descriptions = df[["gene", "description"]]
@@ -236,7 +232,7 @@ def construct_mutations_dataframe() -> pd.DataFrame:
     This is a separate table because each mutant_ID can have several mutations
     """
     identity_spreadsheet = get_identity_spreadsheet_path()
-    df = pd.read_csv(identity_spreadsheet, header=0)
+    df = pd.read_excel(identity_spreadsheet, header=0, engine='openpyxl')
 
     # TODO: verify that we don't want to include which gene feature
     # rn if we include gene features, we double count mutations to a single gene
@@ -267,7 +263,7 @@ def construct_identity_dataframe(
 
     """
     identity_spreadsheet = get_identity_spreadsheet_path()
-    df = pd.read_csv(identity_spreadsheet, header=0)
+    df = pd.read_excel(identity_spreadsheet, header=0, engine='openpyxl')
 
     # Assert that there are no null values in the "Location" and "New Location" columns
     assert df["Location"].notnull().all()
@@ -407,7 +403,6 @@ def main():
     write_dataframe(gene_descriptions, f"gene_descriptions.csv")
 
 
-# %%
 if __name__ == "__main__":
     logging.basicConfig(level=logging.DEBUG if DEV_MODE else logging.INFO)
     main()

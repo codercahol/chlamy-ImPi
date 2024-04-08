@@ -78,7 +78,7 @@ def parse_name(f):
         assert len(parts[3].split(".")) == 2, f
         time_regime = parts[2] + "_" + parts[3].split(".")[0]
 
-    assert plate_num in {99, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10}, f
+    assert plate_num in set([x for x in range(23)] + [99,]), f
     assert re.match(r"M[1-6]", measurement_num), f
     assert time_regime in {
         "30s-30s",

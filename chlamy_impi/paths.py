@@ -20,7 +20,7 @@ WELL_SEGMENTATION_DIR = PROJECT_ROOT / "output" / "well_segmentation_cache"
 # IDENTITY_SPREADSHEET_PATH is the path to the spreadsheet containing the plate identity information
 # https://docs.google.com/spreadsheets/d/1_UcLC4jbI04Rnpt2vUkSCObX8oUY6mzl/edit?usp=drive_link&ouid=108504591016316429773&rtpof=true&sd=true
 IDENTITY_SPREADSHEET_PATH = \
-    INPUT_DIR / "plate_identity" / "Identity plates in Burlacot Lab 20231221 simplified.xlsx - large-lib_rearray2.txt.csv"
+    INPUT_DIR / "Identity plates in Burlacot Lab 20231221 simplified.xlsx"
 
 
 # DATABASE_DIR is where we save the output of the database creation as .csv and parquet files
