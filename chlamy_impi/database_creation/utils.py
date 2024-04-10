@@ -95,7 +95,9 @@ def parse_name(f):
 def compute_measurement_times(meta_df: pd.DataFrame) -> list[datetime.datetime]:
     """In this function, we compute the time of each y2 or npq measuremnt."""
     meta_df["Datetime"] = meta_df[["Date", "Time"]].apply(
-        lambda x: pd.to_datetime(x["Date"]) + pd.to_timedelta(x["Time"]), axis=1
+        lambda x: pd.to_datetime(x["Date"], format="%d.%m.%y")
+                  + pd.to_timedelta(x["Time"]),
+        axis=1,
     )
 
     assert len(meta_df) <= 82
