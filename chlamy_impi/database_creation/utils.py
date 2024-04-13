@@ -59,7 +59,7 @@ def spreadsheet_plate_to_numeric(plate: str) -> int:
     return int(number_str)
 
 
-def parse_name(f):
+def parse_name(f, return_date: int = False):
     """Parse the name of a file, e.g. `20200303_7-M4_2h-2h.npy` or `20231119_07-M3_20h_ML.npy`
     """
     f = str(f)
@@ -78,7 +78,7 @@ def parse_name(f):
         assert len(parts[3].split(".")) == 2, f
         time_regime = parts[2] + "_" + parts[3].split(".")[0]
 
-    assert plate_num in set([x for x in range(23)] + [99,]), f
+    assert plate_num in set([x for x in range(24)] + [99,]), f
     assert re.match(r"M[1-6]", measurement_num), f
     assert time_regime in {
         "30s-30s",
@@ -89,7 +89,11 @@ def parse_name(f):
         "20h_HL",
     }, f"{time_regime}, {f}"
 
-    return plate_num, measurement_num, time_regime
+    if return_date:
+        date = datetime.datetime.strptime(parts[0], "%Y%m%d")
+        return plate_num, measurement_num, time_regime, date
+    else:
+        return plate_num, measurement_num, time_regime
 
 
 def compute_measurement_times(meta_df: pd.DataFrame) -> list[datetime.datetime]:

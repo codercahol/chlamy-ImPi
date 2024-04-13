@@ -76,7 +76,7 @@ def construct_plate_info_df() -> pd.DataFrame:
     rows = []
 
     for filename_npy, filename_meta in zip(filenames_npy, filenames_meta):
-        plate_num, measurement_num, light_regime = parse_name(filename_npy.name)
+        plate_num, measurement_num, light_regime, start_date = parse_name(filename_npy.name, return_date=True)
 
         logger.info(f"\n\n\nProcessing plate info from filename: {filename_npy.name}")
 
@@ -90,6 +90,7 @@ def construct_plate_info_df() -> pd.DataFrame:
         row_data = {
             "plate": plate_num,
             "measurement": measurement_num,
+            "start_date": start_date,
             "light_regime": light_regime,
             "dark_threshold": dark_threshold,
             "light_threshold": light_threshold,
@@ -122,7 +123,7 @@ def construct_well_info_df() -> pd.DataFrame:
     rows = []
 
     for filename_npy, filename_meta in zip(filenames_npy, filenames_meta):
-        plate_num, measurement_num, light_regime = parse_name(filename_npy.name)
+        plate_num, measurement_num, light_regime, start_date = parse_name(filename_npy.name, return_date=True)
 
         logger.info(
             f"\n\n\nProcessing image features from filename: {filename_npy.name}"
@@ -152,6 +153,7 @@ def construct_well_info_df() -> pd.DataFrame:
             row_data = {
                 "plate": plate_num,
                 "measurement": measurement_num,
+                "start_date": start_date,
                 "i": i,
                 "j": j,
                 "fv_fm": fv_fm_array[i, j],
@@ -194,16 +196,31 @@ def construct_well_info_df() -> pd.DataFrame:
 
 
 def merge_plate_and_well_info_dfs(plate_df: pd.DataFrame, well_df: pd.DataFrame):
-    """ merge the plate and well info dataframes """
-    df = pd.merge(well_df, plate_df, on=["plate", "measurement"], how="left")
-    
+    """Merge the plate and well info dataframes. This assumes that the plate, measurement, and start_date
+    columns are sufficient to uniquely identify one dataset.
+    """
+    df = pd.merge(well_df, plate_df, on=["plate", "measurement", "start_date"], how="left")
+
+    sanity_check_merged_plate_info_and_well_info(df)
+
     df["well_id"] = df.apply(index_to_location_rowwise, axis=1)
+
         #lambda x: "{}-{}-{}".format(x.plate, x.measurement, index_to_location_rowwise(x)), axis=1)
     # df = df.set_index("full_id")
+
     logger.info(
         f"Constructed merged dataframe. Shape: {df.shape}."
     )
     return df
+
+
+def sanity_check_merged_plate_info_and_well_info(df: pd.DataFrame) -> None:
+    """Perform some sanity checks on the merged dataframe"""
+
+    # Check that each unique plate, measurement, start_date combination has 384 rows
+    unique_combinations = df.groupby(["plate", "measurement", "start_date"]).size()
+    assert unique_combinations.min() == 384, f"Minimum number of rows for a unique combination is {unique_combinations.min()}"
+    assert unique_combinations.max() == 384, f"Maximum number of rows for a unique combination is {unique_combinations.max()}"
 
 
 def construct_gene_description_dataframe() -> pd.DataFrame:
