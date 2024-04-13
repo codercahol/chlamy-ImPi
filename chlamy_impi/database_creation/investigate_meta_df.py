@@ -1,15 +1,6 @@
-"""In this file, we take preprocessed image data (segmented into wells) and construct a database (currently csv files and sqlite)
-containing all the features we need for our analysis.
-
-The script is controlled using hard-coded constants at the top of the file. These are:
-    - DEV_MODE: whether to run in development mode (only use a few files)
-
-The database will have five tables:
-    - plate_info: contains information about each plate, such as plate number, light regime, etc.
-    - image_features: contains features extracted from the images, such as Fv/Fm, Y2, NPQ, along with experimental information
-    - identity: contains information about the identity of each mutant, such as well location, plate number, etc.
-    - mutations: contains information about the mutations in each mutant, such as disrupted gene name, type, confidence level, etc.
-    - gene_descriptions: contains lengthy descriptions of each gene
+"""
+After running well_segmentation_preprocessing/main.py with new data, run this script to check for any
+new errors. Then, edit error_correction.py:manually_fix_erroneous_time_points to fix them.
 """
 
 from itertools import product
