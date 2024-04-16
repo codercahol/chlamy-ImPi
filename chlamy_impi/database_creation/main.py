@@ -42,6 +42,10 @@ logger = logging.getLogger(__name__)
 
 DEV_MODE = False
 
+pd.set_option('display.max_columns', None)
+pd.set_option('display.max_rows', None)
+
+
 
 def prepare_img_array_and_df(filename_meta, filename_npy):
     img_array = np.load(filename_npy)
@@ -282,15 +286,47 @@ def construct_identity_dataframe(
     identity_spreadsheet = get_identity_spreadsheet_path()
     df = pd.read_excel(identity_spreadsheet, header=0, engine='openpyxl')
 
-    # Assert that there are no null values in the "Location" and "New Location" columns
-    assert df["Location"].notnull().all()
-    assert df["New location"].notnull().all()
+    # NOTE: the finalised identity spreadsheet has non-unique column names. Pandas appends .1, .2, .3, etc. to these
+
+    # In the old spreadsheet, Location was e.g. A10, and New location was e.g. Plate 01. These have been mapped to the
+    # columns below.
+    # The new spreadsheet has some null values for "New Location" and "New Location.4" which we need to drop
+    df = df.dropna(subset=["New Location", "New Location.4"])
+
+    # Drop the final row which just says "Z-END"
+    df = df.iloc[:-1]
+
+    # Map all values of "Plate RTL" to "Plate 98" to keep with the numeric plate number format
+    df["New Location"] = df["New Location"].apply(lambda x: x.replace("Plate RTL", "Plate 98"))
+
+    # Map all values of "Plate 1" to "Plate 01" in the "New Location" column
+    df["New Location"] = df["New Location"].apply(lambda x: x.replace("Plate 1", "Plate 01") if x == "Plate 1" else x)
+
+    # Check that all entries in the "New Location" column are of the form "Plate XX"
+    assert df["New Location"].apply(lambda x: x.startswith("Plate ")).all(), df["New Location"].unique()
+    assert df["New Location"].apply(lambda x: len(x) == 8).all(), df["New Location"].unique()
+    assert df["New Location"].apply(lambda x: x[6:].isdigit()).all(), df["New Location"].unique()
+
+    # Check that all entries in the "New Location.4" column are of the form "A01", "B12", etc.
+    assert df["New Location.4"].apply(lambda x: len(x) == 3).all(), df["New Location.4"].unique()
+    assert df["New Location.4"].apply(lambda x: x[0] in "ABCDEFGHIJKLMNOP").all(), df["New Location.4"].unique()
+    assert df["New Location.4"].apply(lambda x: x[1:].isdigit()).all(), df["New Location.4"].unique()
 
     # Collect columns which we need
-    df = df.rename(columns={"New location": "plate", "Location": "well_id"})
+    df = df.rename(columns={"New Location": "plate", "New Location.4": "well_id"})
     df = df[["mutant_ID", "plate", "well_id"]]
     df["plate"] = df["plate"].apply(spreadsheet_plate_to_numeric)
     df = df.drop_duplicates(ignore_index=True)
+
+    # TODO: add 'feature' column to identity dataframe
+    # Note: needs to be done in a way which doesn't introduce duplicates, since we have multiple rows per mutant_ID with different feature entries
+
+    # Check that all mutant_IDs are unique - print out any duplicates
+    check_plate_and_wells_are_unique(df)
+
+    # Note: the check above fails with the current Finalised Identity Spreadsheet.
+    # We are waiting for the new spreadsheet to be finalised before we can continue.
+    assert 0
 
     # Add column which tells us the number of genes which were mutated
     signif_mutations = mutation_df[mutation_df.confidence_level <= conf_threshold]
@@ -304,24 +340,28 @@ def construct_identity_dataframe(
     
     df["num_mutations"] = df["mutant_ID"].apply(lambda x: gene_mutation_counts[x])
 
+    # TODO: delete this block of code, should be unnecessary now that the WT wells are added in the identity spreadsheet
     # For each plate, add rows for the three WT wells
-    for plate in df.plate.unique():
-        for well_pos in get_wt_well_positions():
-            # Check no well already exists at this location
-            assert f"{plate}-{well_pos}" not in df.index
-            WT_row = {
-                "plate": plate,
-                "well_id": well_pos,
-                "mutant_ID": "WT",
-                "mutated_genes": "",
-                "num_mutations": 0,
-            }
-            df.loc[len(df)] = WT_row
+    #for plate in df.plate.unique():
+    #    for well_pos in get_wt_well_positions():
+    #        # Check no well already exists at this location
+    #        assert not df[(df.plate == plate) & (df.well_id == well_pos)].any().any(), f"WT well already exists at {well_pos} on plate {plate}"
+    #        WT_row = {
+    #            "plate": plate,
+    #            "well_id": well_pos,
+    #            "mutant_ID": "WT",
+    #            "mutated_genes": "",
+    #            "num_mutations": 0,
+    #        }
+    #        df.loc[len(df)] = WT_row
 
     # Add rows for wild type plate 99
     wt_rows = create_wt_rows()
     df_wt = pd.DataFrame(wt_rows)
     df = pd.concat([df, df_wt], axis=0, ignore_index=False)
+
+    # Repeat this check after adding the WT rows
+    check_plate_and_wells_are_unique(df)
 
     # Perform some final sanity checks
     assert df["mutant_ID"].notnull().all()
@@ -333,7 +373,7 @@ def construct_identity_dataframe(
     plates = df.plate
     plate_counts = plates.value_counts()
     for plate, count in plate_counts.items():
-        assert count <= 384, f"Plate {plate} has {count} wells"
+        assert count <= 384, f"Plate {plate} has {count} wells with ids {df[df.plate == plate].well_id.unique()}"
 
     logger.info(
         f"Constructed identity dataframe. Shape: {df.shape}. Columns: {df.columns}."
@@ -341,6 +381,18 @@ def construct_identity_dataframe(
     logger.info(f"Values of num_mutations: {df.num_mutations.unique()}")
     logger.info(f"{df.head()}")
     return df
+
+
+def check_plate_and_wells_are_unique(df):
+    """This sanity check is all about ensuring that each plate/well combo only has a single mutant_ID"""
+    error_message = ''
+    plates = df.plate
+    for plate in plates.unique():
+        well_id_with_multiple_mutants = df[df.plate == plate].groupby("well_id").filter(lambda x: len(x) > 1)
+        if not well_id_with_multiple_mutants.empty:
+            print(well_id_with_multiple_mutants.sort_values("well_id"))
+            error_message += '/n' + str(well_id_with_multiple_mutants)
+    assert error_message == '', error_message
 
 
 def create_wt_rows() -> list[dict]:
@@ -406,12 +458,14 @@ def merge_identity_and_experimental_dfs(exptl_data, identity_df):
 
 
 def main():
+    mutations_df = construct_mutations_dataframe()
+    identity_df = construct_identity_dataframe(mutations_df)
+    assert 0
+
     plate_data = construct_plate_info_df()
     well_data = construct_well_info_df()
     exptl_data = merge_plate_and_well_info_dfs(well_data, plate_data)
     
-    mutations_df = construct_mutations_dataframe()
-    identity_df = construct_identity_dataframe(mutations_df)
 
     total_df = merge_identity_and_experimental_dfs(exptl_data, identity_df)
     save_df_to_parquet(total_df)
