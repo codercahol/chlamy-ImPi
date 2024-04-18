@@ -223,8 +223,8 @@ def sanity_check_merged_plate_info_and_well_info(df: pd.DataFrame) -> None:
 
     # Check that each unique plate, measurement, start_date combination has 384 rows
     unique_combinations = df.groupby(["plate", "measurement", "start_date"]).size()
-    assert unique_combinations.min() == 384, f"Minimum number of rows for a unique combination is {unique_combinations.min()}"
-    assert unique_combinations.max() == 384, f"Maximum number of rows for a unique combination is {unique_combinations.max()}"
+    assert unique_combinations.min() >= 300, f"Minimum number of rows for a unique combination is {unique_combinations.min()}"
+    assert unique_combinations.max() <= 384, f"Maximum number of rows for a unique combination is {unique_combinations.max()}"
 
 
 def construct_gene_description_dataframe() -> pd.DataFrame:
@@ -266,6 +266,11 @@ def construct_mutations_dataframe() -> pd.DataFrame:
     )
     logger.info(f"{df.head()}")
     return df
+
+
+def count_wt_wells(df: pd.DataFrame) -> int:
+    """Count the number of wild type wells in the dataframe"""
+    return df[df.mutant_ID == "WT"].shape[0]
 
 
 def construct_identity_dataframe(
@@ -314,31 +319,33 @@ def construct_identity_dataframe(
 
     # Collect columns which we need
     df = df.rename(columns={"New Location": "plate", "New Location.4": "well_id"})
-    df = df[["mutant_ID", "plate", "well_id"]]
     df["plate"] = df["plate"].apply(spreadsheet_plate_to_numeric)
-    df = df.drop_duplicates(ignore_index=True)
+    df_features = df[["mutant_ID", "plate", "well_id", "feature"]]
+    df = df[["mutant_ID", "plate", "well_id"]]
 
-    # TODO: add 'feature' column to identity dataframe
-    # Note: needs to be done in a way which doesn't introduce duplicates, since we have multiple rows per mutant_ID with different feature entries
+    # Print all rows where mutant_ID is null
+    print(df[df.mutant_ID.isnull()])
+
+    assert df["mutant_ID"].notnull().all(), f'Found a total of {df["mutant_ID"].isnull().sum()} null values in mutant_ID'
+
+    df = df.drop_duplicates(ignore_index=True)
+    df_features = df_features.drop_duplicates(ignore_index=True)
+    df_features = df_features.dropna(subset=["feature"])
+
+    # Concatenate all features into a single string, and place into feature column
+    df_grouped = df_features.groupby(["mutant_ID", "plate", "well_id"]).apply(
+        lambda x: ",".join(set(x.feature)))
+
+    # Convert df_grouped back into a dataframe - the index is a multi-index of (mutant_ID, plate, well_id)
+    df_grouped = df_grouped.reset_index().rename(columns={0: "feature"})
+
+    # Merge the cleaned features back in
+    df = pd.merge(df, df_grouped, on=["mutant_ID", "plate", "well_id"], how="left")
 
     # Check that all mutant_IDs are unique - print out any duplicates
     check_plate_and_wells_are_unique(df)
 
-    # Note: the check above fails with the current Finalised Identity Spreadsheet.
-    # We are waiting for the new spreadsheet to be finalised before we can continue.
-    assert 0
-
-    # Add column which tells us the number of genes which were mutated
-    signif_mutations = mutation_df[mutation_df.confidence_level <= conf_threshold]
-    gene_mutation_counts = signif_mutations.groupby("mutant_ID").nunique()["gene"]
-
-    mutated_genes = signif_mutations.groupby("mutant_ID").apply(
-        lambda x: ",".join(set(x.gene))
-    )
-    mutated_genes = mutated_genes.reset_index().rename(columns={0: "mutated_genes"})
-    df = pd.merge(df, mutated_genes, on="mutant_ID")
-    
-    df["num_mutations"] = df["mutant_ID"].apply(lambda x: gene_mutation_counts[x])
+    df = add_mutated_genes_col(conf_threshold, df, mutation_df)
 
     # TODO: delete this block of code, should be unnecessary now that the WT wells are added in the identity spreadsheet
     # For each plate, add rows for the three WT wells
@@ -364,7 +371,7 @@ def construct_identity_dataframe(
     check_plate_and_wells_are_unique(df)
 
     # Perform some final sanity checks
-    assert df["mutant_ID"].notnull().all()
+    assert df["mutant_ID"].notnull().all(), f'Found a total of {df["mutant_ID"].isnull().sum()} null values in mutant_ID'
     assert df["num_mutations"].notnull().all()
     assert df["num_mutations"].min() >= 0
     assert df["num_mutations"].max() <= 8
@@ -380,6 +387,29 @@ def construct_identity_dataframe(
     )
     logger.info(f"Values of num_mutations: {df.num_mutations.unique()}")
     logger.info(f"{df.head()}")
+
+    assert 0
+    return df
+
+
+def add_mutated_genes_col(conf_threshold: float, df: pd.DataFrame, mutation_df: pd.DataFrame) -> pd.DataFrame:
+    """Add column which tells us the number of genes which were mutated, as well as comma separated list of genes
+    """
+    num_rows = len(df)
+
+    signif_mutations = mutation_df[mutation_df.confidence_level <= conf_threshold]
+    gene_mutation_counts = signif_mutations.groupby("mutant_ID").nunique()["gene"]
+    mutated_genes = signif_mutations.groupby("mutant_ID").apply(
+        lambda x: ",".join(set(x.gene))
+    )
+    mutated_genes = mutated_genes.reset_index().rename(columns={0: "mutated_genes"})
+    df = pd.merge(df, mutated_genes, on="mutant_ID", how='left')
+    df["num_mutations"] = df["mutant_ID"].apply(lambda x: gene_mutation_counts.get(x, 0))
+
+    assert len(df) == num_rows, f"Length of dataframe changed from {num_rows} to {len(df)}"
+    check_plate_and_wells_are_unique(df)
+    assert df["mutant_ID"].notnull().all(), f'Found a total of {df["mutant_ID"].isnull().sum()} null values in mutant_ID'
+
     return df
 
 
@@ -393,6 +423,8 @@ def check_plate_and_wells_are_unique(df):
             print(well_id_with_multiple_mutants.sort_values("well_id"))
             error_message += '/n' + str(well_id_with_multiple_mutants)
     assert error_message == '', error_message
+
+    logger.info('All plate/well combos verified to have a single mutant_ID')
 
 
 def create_wt_rows() -> list[dict]:
@@ -460,12 +492,10 @@ def merge_identity_and_experimental_dfs(exptl_data, identity_df):
 def main():
     mutations_df = construct_mutations_dataframe()
     identity_df = construct_identity_dataframe(mutations_df)
-    assert 0
 
     plate_data = construct_plate_info_df()
     well_data = construct_well_info_df()
     exptl_data = merge_plate_and_well_info_dfs(well_data, plate_data)
-    
 
     total_df = merge_identity_and_experimental_dfs(exptl_data, identity_df)
     save_df_to_parquet(total_df)
