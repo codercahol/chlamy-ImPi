@@ -39,12 +39,15 @@ def index_to_location(i: int, j: int) -> str:
 
 
 def index_to_location_rowwise(x):
-    """Convert a zero-indexed tuple, e.g. (0, 0), to a location string, e.g. "A1" """
+    """Convert a zero-indexed tuple, e.g. (0, 0), to a location string, e.g. "A01"
+
+    Note: Must be A01, B12, C04, etc; not A1, B12, C4.
+    """
 
     letter = chr(ord("A") + x.i)
     number = x.j + 1
 
-    return f"{letter}{number}"
+    return f"{letter}{number:02d}"
 
 
 def spreadsheet_plate_to_numeric(plate: str) -> int:
@@ -56,7 +59,11 @@ def spreadsheet_plate_to_numeric(plate: str) -> int:
     assert number_str[0] in "0123456789"
     assert number_str[1] in "0123456789"
 
-    return int(number_str)
+    num = int(number_str)
+
+    assert 1 <= num <= 99
+
+    return num
 
 
 def parse_name(f, return_date: int = False):
