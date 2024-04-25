@@ -16,6 +16,9 @@ journal.md
 *.tif
 *.png
 
+# ignore scratch notebooks
+*_nogit.ipynb
+
 # ignore large NN models
 *.pth
 

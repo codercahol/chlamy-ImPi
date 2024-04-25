@@ -12,36 +12,46 @@ def filename_to_erroneous_frames() -> dict[str, tuple[int, int]]:
     in the corresponding .csv file, which we need to remove.
     """
     filename_to_inds = {
-        '20231206_99-M6_30s-30s': [(61, 122)],
-        '20240223_16-M6_30s-30s': [(23, 46)],
-        '20240330_23-M6_30s-30s': [(61, 122)],
-        '20231024_3-M1_1min-1min': [(77, 154)],
-        '20231031_4-M2_1min-1min': [(57, 114)],
-        '20231105_5-M1_1min-1min': [(37, 74), (38, 75)],
-        '20231117_7-M1_1min-1min': [(61, 122)],
-        '20240313_21-M1_1min-1min': [(13, 26), (24, 47)],
-        '20240301_18-M1_1min-1min': [(11, 22)],
-        '20240308_17-M2_1min-1min': [(35, 70)],
-        '20240406_20-M1_1min-1min': [(71, 142)],
-        '20240130_12-M6_10min-10min': [(35, 70)],
-        '20240305_18-M5_10min-10min': [(67, 134)],
-        '20240323_22-M5_10min-10min': [(69, 138)],
-        '20240405_1-M6_10min-10min': [(42, 84), (71, 141)],
-        '20240215_15-M4_2h-2h': [(18, 36)],
-        '20231027_3-M4_2h-2h': [(40, 80)],
-        '20240316_21-M4_2h-2h': [(17, 34)],
-        '20231217_10-M3_20h_ML': [(21, 42)],
-        '20240220_16-M3_20h_ML': [(12, 24)],
-        '20240327_23-M3_20h_ML': [(4, 8)],
-        '20231025_3-M2_20h_HL': [(15, 30)],
-        '20231112_6-M2_20h_HL': [(34, 68)],
-        '20240225_8-M2_20h_HL': [(36, 72)],
+        "20231206_99-M6_30s-30s": [(61, 122)],
+        "20240223_16-M6_30s-30s": [(23, 46)],
+        "20240330_23-M6_30s-30s": [(61, 122)],
+        "20231024_3-M1_1min-1min": [(77, 154)],
+        "20231031_4-M2_1min-1min": [(57, 114)],
+        "20231105_5-M1_1min-1min": [(37, 74), (38, 75)],
+        "20231117_7-M1_1min-1min": [(61, 122)],
+        "20240313_21-M1_1min-1min": [(13, 26), (24, 47)],
+        "20240301_18-M1_1min-1min": [(11, 22)],
+        "20240308_17-M2_1min-1min": [(35, 70)],
+        "20240406_20-M1_1min-1min": [(71, 142)],
+        "20240130_12-M6_10min-10min": [(35, 70)],
+        "20240305_18-M5_10min-10min": [(67, 134)],
+        "20240323_22-M5_10min-10min": [(69, 138)],
+        "20240405_1-M6_10min-10min": [(42, 84), (71, 141)],
+        "20240215_15-M4_2h-2h": [(18, 36)],
+        "20231027_3-M4_2h-2h": [(40, 80)],
+        "20240316_21-M4_2h-2h": [(17, 34)],
+        "20231217_10-M3_20h_ML": [(21, 42)],
+        "20240220_16-M3_20h_ML": [(12, 24)],
+        "20240327_23-M3_20h_ML": [(4, 8)],
+        "20231025_3-M2_20h_HL": [(15, 30)],
+        "20231112_6-M2_20h_HL": [(34, 68)],
+        "20240225_8-M2_20h_HL": [(36, 72)],
+        # Leron: I added these, not 100% sure I got the indexes right
+        # I found the idx of the extra frames in the csv files
+        # took the "No." column and subtracted 1 for the index in the meta_df
+        # then multiplied by 2 to get the frame index
+        "20240412_2-M5_10min-10min": [(60, 120)],
+        "20240418_9-M6_30s-30s": [(47, 94)],
+        "20240422_6-M6_30s-30s": [(9, 18)],
+        # end
     }
 
     return filename_to_inds
 
 
-def manually_fix_erroneous_time_points(meta_df, img_array, base_filename: str) -> tuple[pd.DataFrame, pd.DataFrame]:
+def manually_fix_erroneous_time_points(
+    meta_df, img_array, base_filename: str
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Implementation of manual fix for erroneous frames in the image stack. Removes frames from the image array,
     as well as corresponding rows from the meta_df.
     """
@@ -50,34 +60,37 @@ def manually_fix_erroneous_time_points(meta_df, img_array, base_filename: str) -
 
     if base_filename in filename_to_inds:
         for meta_df_index, frame_num in filename_to_inds[base_filename]:
-            logger.warning(f'Fixing erroneous frame {frame_num} for {base_filename}')
+            logger.warning(f"Fixing erroneous frame {frame_num} for {base_filename}")
 
             meta_df = meta_df.drop(meta_df.index[meta_df_index])
 
             img_array = np.delete(img_array, frame_num, axis=2)
 
-    assert img_array.shape[2] in {84, 164}, f"Unexpected number of frames ({img_array.shape[2]}) for {base_filename}"
-    assert img_array.shape[2] == len(meta_df) * 2, f"Number of frames ({img_array.shape[2]}) does not match number of rows in meta_df ({len(meta_df)})"
+    assert img_array.shape[2] in {
+        84,
+        164,
+    }, f"Unexpected number of frames ({img_array.shape[2]}) for {base_filename}"
+    assert (
+        img_array.shape[2] == len(meta_df) * 2
+    ), f"Number of frames ({img_array.shape[2]}) does not match number of rows in meta_df ({len(meta_df)})"
 
     return meta_df, img_array
 
 
 def remove_repeated_initial_frame(img_array) -> np.array:
-    """Check for a repetition of the first pair of frames
-    """
-    if (np.all(img_array[:, :, 0, ...] == img_array[:, :, 2, ...]) and
-        np.all(img_array[:, :, 3, ...] == img_array[:, :, 1, ...])):
-            logger.warning("Found repeated initial frame pair. Removing!")
-            img_array = img_array[:, :, 2:, ...]
+    """Check for a repetition of the first pair of frames"""
+    if np.all(img_array[:, :, 0, ...] == img_array[:, :, 2, ...]) and np.all(
+        img_array[:, :, 3, ...] == img_array[:, :, 1, ...]
+    ):
+        logger.warning("Found repeated initial frame pair. Removing!")
+        img_array = img_array[:, :, 2:, ...]
 
     return img_array
 
 
 def remove_repeated_initial_frame_tif(tif: np.array) -> np.array:
-    """As above, but for raw tif files which have time step in the first dimension
-    """
-    if (np.all(tif[0, ...] == tif[2, ...]) and
-        np.all(tif[3, ...] == tif[1, ...])):
+    """As above, but for raw tif files which have time step in the first dimension"""
+    if np.all(tif[0, ...] == tif[2, ...]) and np.all(tif[3, ...] == tif[1, ...]):
         logger.warning("Found repeated initial frame pair. Removing!")
         tif = tif[2:, ...]
 
@@ -96,7 +109,9 @@ def remove_failed_photos(tif):
     max_per_timestep = tif.max(1).max(1)
     keep_image = max_per_timestep > 0
 
-    logger.warning(f"Discarding {sum(~keep_image)} images (indices {list(np.argwhere(~keep_image))}) which are all black")
+    logger.warning(
+        f"Discarding {sum(~keep_image)} images (indices {list(np.argwhere(~keep_image))}) which are all black"
+    )
 
     tif = tif[keep_image]
     return tif
@@ -117,19 +132,69 @@ def fix_erroneous_time_points(meta_df, img_array):
 
     """
     # One possible column layout in the csv files
-    if set(meta_df.columns) == {"Date", "Time", "No.", "PAR", "F1", "F2", "F3", "Fm'1", "Fm'2", "Fm'3", "Y(II)1", "Y(II)2", "Y(II)3"}:
+    if set(meta_df.columns) == {
+        "Date",
+        "Time",
+        "No.",
+        "PAR",
+        "F1",
+        "F2",
+        "F3",
+        "Fm'1",
+        "Fm'2",
+        "Fm'3",
+        "Y(II)1",
+        "Y(II)2",
+        "Y(II)3",
+    }:
         # Look for cases where Fm'1 == Fm'2 == Fm'3 == 0, as these signify failed measurements
-        meta_df["failed_measurement"] = (meta_df["Fm'1"] == 0.) & (meta_df["Fm'2"] == 0.) & (meta_df["Fm'3"] == 0.)
-    elif set(meta_df.columns) == {'Date', 'Time', 'No.', 'PAR', 'Y(II)1', 'Y(II)2', 'Y(II)3', 'NPQ1', 'NPQ2', 'NPQ3'}:
+        meta_df["failed_measurement"] = (
+            (meta_df["Fm'1"] == 0.0)
+            & (meta_df["Fm'2"] == 0.0)
+            & (meta_df["Fm'3"] == 0.0)
+        )
+    elif set(meta_df.columns) == {
+        "Date",
+        "Time",
+        "No.",
+        "PAR",
+        "Y(II)1",
+        "Y(II)2",
+        "Y(II)3",
+        "NPQ1",
+        "NPQ2",
+        "NPQ3",
+    }:
         # Look for cases where Y(II) == 0 and NPQ == 1, as these signify failed measurements
-        meta_df["failed_measurement"] = (meta_df["Y(II)1"] == 0.) & (meta_df["Y(II)2"] == 0.) & (meta_df["Y(II)3"] == 0.) & (meta_df["NPQ1"] == 1.) & (meta_df["NPQ2"] == 1.) & (meta_df["NPQ3"] == 1.)
-    elif set(meta_df.columns) == {'Date', 'Time', 'No.', 'PAR', 'F1', "Fm'1", 'Y(II)1'}:
+        meta_df["failed_measurement"] = (
+            (meta_df["Y(II)1"] == 0.0)
+            & (meta_df["Y(II)2"] == 0.0)
+            & (meta_df["Y(II)3"] == 0.0)
+            & (meta_df["NPQ1"] == 1.0)
+            & (meta_df["NPQ2"] == 1.0)
+            & (meta_df["NPQ3"] == 1.0)
+        )
+    elif set(meta_df.columns) == {"Date", "Time", "No.", "PAR", "F1", "Fm'1", "Y(II)1"}:
         # Look for cases where Fm'1 == 0 and Y(II)1 == 0, as these signify failed measurements
-        meta_df["failed_measurement"] = (meta_df["Fm'1"] == 0.) & (meta_df["Y(II)1"] == 0.)
-    elif set(meta_df.columns) == {'Date', 'Time', 'No.', 'PAR', 'Y(II)1', 'Y(II)2', 'Y(II)3'}:
-        meta_df["failed_measurement"] = (meta_df["Y(II)1"] == 0.) & (meta_df["Y(II)2"] == 0.) & (meta_df["Y(II)3"] == 0.)
+        meta_df["failed_measurement"] = (meta_df["Fm'1"] == 0.0) & (
+            meta_df["Y(II)1"] == 0.0
+        )
+    elif set(meta_df.columns) == {
+        "Date",
+        "Time",
+        "No.",
+        "PAR",
+        "Y(II)1",
+        "Y(II)2",
+        "Y(II)3",
+    }:
+        meta_df["failed_measurement"] = (
+            (meta_df["Y(II)1"] == 0.0)
+            & (meta_df["Y(II)2"] == 0.0)
+            & (meta_df["Y(II)3"] == 0.0)
+        )
     else:
-        #meta_df["failed_measurement"] = (meta_df["Fm'1"] == 0.) & (meta_df["Fm'2"] == 0.) & (meta_df["Fm'3"] == 0.) & (meta_df["Y(II)1"] == 0.) & (meta_df["Y(II)2"] == 0.) & (meta_df["Y(II)3"] == 0.)
+        # meta_df["failed_measurement"] = (meta_df["Fm'1"] == 0.) & (meta_df["Fm'2"] == 0.) & (meta_df["Fm'3"] == 0.) & (meta_df["Y(II)1"] == 0.) & (meta_df["Y(II)2"] == 0.) & (meta_df["Y(II)3"] == 0.)
 
         logger.warning(f"Unknown column layout in meta_df: {meta_df.columns}")
 
@@ -150,7 +215,8 @@ def fix_erroneous_time_points(meta_df, img_array):
     print(flush=True)
 
     assert img_array.shape[2] % 2 == 0, f"Odd number of frames ({img_array.shape[2]})"
-    assert img_array.shape[2] == len(meta_df) * 2, f"Number of frames ({img_array.shape[2]}) does not match number of rows in meta_df ({len(meta_df)})"
+    assert (
+        img_array.shape[2] == len(meta_df) * 2
+    ), f"Number of frames ({img_array.shape[2]}) does not match number of rows in meta_df ({len(meta_df)})"
 
     return meta_df, img_array
-
