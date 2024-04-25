@@ -195,10 +195,8 @@ def get_disk_mask(img_array, radius_fraction=1):
     Output:
         disk_mask: 2D numpy boolean array of shape (height, width)
     """
-    assert (
-        radius_fraction <= 1 and radius_fraction > 0,
-        "radius_fraction must be between 0 and 1",
-    )
+    assert 1 >= radius_fraction > 0, "radius_fraction must be between 0 and 1"
+
     crop_dims = img_array.shape[-2:]
     CELL_WIDTH_X = crop_dims[0]
     CELL_WIDTH_Y = crop_dims[1]

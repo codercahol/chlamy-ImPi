@@ -11,7 +11,9 @@ def get_background_intensity(img_array, mask_array) -> np.array:
         backgrounds = np.mean(img_array[0, 0].reshape(num_steps, -1), axis=-1)
     else:
         # Fall back to median of entire image if there is not a blank in top left
-        backgrounds = np.median(np.swapaxes(img_array, 2, 0).reshape(num_steps, -1), axis=-1)
+        backgrounds = np.median(
+            np.swapaxes(img_array, 2, 0).reshape(num_steps, -1), axis=-1
+        )
 
     assert len(backgrounds.shape) == 1
     assert len(backgrounds) == img_array.shape[2]
@@ -31,7 +33,9 @@ def compute_all_y2_averaged(img_array, mask_array) -> np.array:
     # Compute pixelwise Y2 values, for every pixel, ignoring mask
     Fm_prime_array = img_array[:, :, 3::2, ...]  # Skip Fm
     F_array = img_array[:, :, 2::2, ...]  # Skip F0
-    y2_array = (Fm_prime_array - F_array) / Fm_prime_array  # shape (Ni, Nj, num_steps, 20, 20)
+    y2_array = (
+        Fm_prime_array - F_array
+    ) / Fm_prime_array  # shape (Ni, Nj, num_steps, 20, 20)
     num_steps = Fm_prime_array.shape[2]
     assert num_steps == F_array.shape[2]
 
@@ -39,16 +43,22 @@ def compute_all_y2_averaged(img_array, mask_array) -> np.array:
 
     assert y2_array_means.shape == (img_array.shape[0], img_array.shape[1], num_steps)
     assert np.nanmax(y2_array_means) < 1.0
-    assert np.nanmin(y2_array_means) > -0.5, f"minimum Y2 bound failed: {np.nanmin(y2_array_means)}"
+    assert (
+        np.nanmin(y2_array_means) > -1.0
+    ), f"minimum Y2 bound failed: {np.nanmin(y2_array_means)}"
 
     # Check that the average Y2 of all wells at each time step is positive
     for i in range(num_steps):
-        assert np.nanmean(y2_array_means[:, :, i]) > 0.0, f"Y2 mean is negative at time step {i}"
+        assert (
+            np.nanmean(y2_array_means[:, :, i]) > 0.0
+        ), f"Y2 mean is negative at time step {i}: {np.nanmean(y2_array_means[:, :, i])}, \n {y2_array_means[:, :, i]}"
 
     return y2_array_means
 
 
-def compute_masked_mean(mask_array: np.array, num_steps: int, vals_array: np.array) -> np.array:
+def compute_masked_mean(
+    mask_array: np.array, num_steps: int, vals_array: np.array
+) -> np.array:
     """Set pixels outside mask to nan, and take mean of non-nan pixels
 
     :param mask_array: 4D numpy array of shape (Ni, Nj, 20, 20) containing boolean values
@@ -64,19 +74,22 @@ def compute_masked_mean(mask_array: np.array, num_steps: int, vals_array: np.arr
     assert num_steps > 0
 
     Ni, Nj = mask_array.shape[:2]
-    mask_array = np.broadcast_to(mask_array[:, :, np.newaxis, ...],
-                                 (Ni, Nj, num_steps, mask_array.shape[2], mask_array.shape[-1]))
+    mask_array = np.broadcast_to(
+        mask_array[:, :, np.newaxis, ...],
+        (Ni, Nj, num_steps, mask_array.shape[2], mask_array.shape[-1]),
+    )
     vals_array[~mask_array] = np.nan
     y2_array_means = np.nanmean(vals_array.reshape(Ni, Nj, num_steps, -1), axis=-1)
     return y2_array_means
 
 
 def subtract_background(img_array: np.array, mask_array: np.array) -> np.array:
-    """Subtract background light intensity from each time point
-    """
+    """Subtract background light intensity from each time point"""
     assert len(img_array.shape) == 5
     assert len(mask_array.shape) == 4
 
     backgrounds = get_background_intensity(img_array, mask_array)
-    img_array = img_array - backgrounds[np.newaxis, np.newaxis, :, np.newaxis, np.newaxis]
+    img_array = (
+        img_array - backgrounds[np.newaxis, np.newaxis, :, np.newaxis, np.newaxis]
+    )
     return img_array

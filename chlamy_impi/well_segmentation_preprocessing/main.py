@@ -52,7 +52,13 @@ def main():
 
     for filename in tqdm(filenames):
         name = filename.stem
-        well_segmentation_output_dir_path(name).mkdir(parents=True, exist_ok=True)
+        outpath = well_segmentation_output_dir_path(name)
+
+        if outpath.exists():
+            logger.info(f"Skipping {name} as it already exists")
+            continue
+
+        outpath.mkdir(parents=True, exist_ok=True)
 
         try:
             tif = load_image(filename)
@@ -66,12 +72,8 @@ def main():
             img_array, well_coords, i_vals, j_vals = segment_multiwell_plate(
                 tif,
                 peak_finder_kwargs={"peak_prominence": 1 / 25, "filter_threshold": 0.2},
-                blob_log_kwargs={"threshold": 0.12},
+                blob_log_kwargs={"threshold": 0.12, "min_sigma": 1, "max_sigma": 3},
                 output_full=True)
-
-            # We expect all plates to be 16x24 in our study
-            assert img_array.shape[0] == 16
-            assert img_array.shape[1] == 24
 
             save_img_array(img_array, name)
 
@@ -79,6 +81,10 @@ def main():
                 visualise_channels(tif, savedir=well_segmentation_visualisation_dir_path(name))
                 visualise_well_histograms(img_array, name, savedir=well_segmentation_histogram_dir_path(name))
                 visualise_grid_crop(tif, img_array, i_vals, j_vals, well_coords, savedir=well_segmentation_visualisation_dir_path(name))
+
+            # We expect all plates to be 16x24 in our study
+            assert img_array.shape[0] == 16, f"Expected 16 rows, got {img_array.shape[0]}"
+            assert img_array.shape[1] == 24, f"Expected 24 columns, got {img_array.shape[1]}"
 
         except AssertionError as e:
             logger.error(f"File: {filename.stem} failed an assertion: {e}")

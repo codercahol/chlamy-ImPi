@@ -1,4 +1,6 @@
 import unittest
+from datetime import datetime
+
 from chlamy_impi.database_creation.utils import parse_name, spreadsheet_plate_to_numeric
 
 
@@ -62,6 +64,10 @@ class TestParseName(unittest.TestCase):
     def test_parse_name_valid_input_4(self):
         result = parse_name("20231213_99-M5_2h-2h.npy")
         self.assertEqual(result, (99, 'M5', '2h-2h'))
+
+    def test_parse_name_valid_input_5(self):
+        result = parse_name("20231213_99-M5_2h-2h.npy", return_date=True)
+        self.assertEqual(result, (99, 'M5', '2h-2h', datetime(year=2023, month=12, day=13)))
 
     def test_parse_name_invalid_input(self):
         with self.assertRaises(AssertionError):
