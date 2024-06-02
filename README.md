@@ -23,13 +23,24 @@ the `.npy` files directly from a shared cache here: https://drive.google.com/dri
 
 ### 2. Database creation
 
-Run 
+After running well_segmentation_preprocessing/main.py with new data, we need to first manually correct the 
+mysterious dodgy time points which are intermittently present in the data. I couldn't easily find a 
+way to automate this step which worked every time.
+
+Run:
+
+```
+python database_creation/investigate_meta_df.py
+```
+
+and manually edit error_correction.py:manually_fix_erroneous_time_points to fix them.
+
+Now we can create the database:
 
 ```
 python database_creation/main.py
 ```
 
-You can also skip this step, and download a pre-created database directly from this folder: https://drive.google.com/drive/folders/1hclnhGfkmy8Rh1l_703z4dsmeCx1DbVz 
 
 Note: see the file `paths.py` for where the code looks to read and write these file caches from.
 

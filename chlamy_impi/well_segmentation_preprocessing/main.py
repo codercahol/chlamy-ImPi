@@ -73,7 +73,9 @@ def main():
                 tif,
                 peak_finder_kwargs={"peak_prominence": 1 / 25, "filter_threshold": 0.2},
                 blob_log_kwargs={"threshold": 0.12, "min_sigma": 1, "max_sigma": 3},
-                output_full=True)
+                output_full=True,
+                correct_rotations=False,
+            )
 
             save_img_array(img_array, name)
 

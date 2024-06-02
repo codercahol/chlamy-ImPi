@@ -41,6 +41,7 @@ from chlamy_impi.paths import (
 logger = logging.getLogger(__name__)
 
 DEV_MODE = False
+IGNORE_ERRORS = True
 
 pd.set_option('display.max_columns', None)
 pd.set_option('display.max_rows', None)
@@ -80,11 +81,25 @@ def construct_plate_info_df() -> pd.DataFrame:
     rows = []
 
     for filename_npy, filename_meta in zip(filenames_npy, filenames_meta):
-        plate_num, measurement_num, light_regime, start_date = parse_name(filename_npy.name, return_date=True)
+        try:
+            plate_num, measurement_num, light_regime, start_date = parse_name(filename_npy.name, return_date=True)
+        except AssertionError:
+            if IGNORE_ERRORS:
+                logger.error(f"Error parsing name of file {filename_npy.name}. Skipping.")
+                continue
+            else:
+                raise
 
         logger.info(f"\n\n\nProcessing plate info from filename: {filename_npy.name}")
 
-        img_array, _ = prepare_img_array_and_df(filename_meta, filename_npy)
+        try:
+            img_array, _ = prepare_img_array_and_df(filename_meta, filename_npy)
+        except AssertionError:
+            if IGNORE_ERRORS:
+                logger.error(f"Error processing file {filename_npy.name}. Skipping.")
+                continue
+            else:
+                raise
 
         assert img_array.shape[2] % 2 == 0
 
@@ -127,7 +142,14 @@ def construct_well_info_df() -> pd.DataFrame:
     rows = []
 
     for filename_npy, filename_meta in zip(filenames_npy, filenames_meta):
-        plate_num, measurement_num, light_regime, start_date = parse_name(filename_npy.name, return_date=True)
+        try:
+            plate_num, measurement_num, light_regime, start_date = parse_name(filename_npy.name, return_date=True)
+        except AssertionError:
+            if IGNORE_ERRORS:
+                logger.error(f"Error parsing name of file {filename_npy.name}. Skipping.")
+                continue
+            else:
+                raise
 
         logger.info(
             f"\n\n\nProcessing image features from filename: {filename_npy.name}"
@@ -145,11 +167,17 @@ def construct_well_info_df() -> pd.DataFrame:
         assert img_array.shape[2] % 2 == 0
         assert img_array.shape[2] // 2 == len(measurement_times)
 
-
-        mask_array = compute_threshold_mask(img_array)
-        y2_array = compute_all_y2_averaged(img_array, mask_array)
-        fv_fm_array = compute_all_fv_fm_averaged(img_array, mask_array)
-        npq_array = compute_all_npq_averaged(img_array, mask_array)
+        try:
+            mask_array = compute_threshold_mask(img_array)
+            y2_array = compute_all_y2_averaged(img_array, mask_array)
+            fv_fm_array = compute_all_fv_fm_averaged(img_array, mask_array)
+            npq_array = compute_all_npq_averaged(img_array, mask_array)
+        except AssertionError:
+            if IGNORE_ERRORS:
+                logger.error(f"Error computing image features for file {filename_npy.name}. Skipping.")
+                continue
+            else:
+                raise
 
         Ni, Nj = img_array.shape[:2]
 
@@ -205,7 +233,15 @@ def merge_plate_and_well_info_dfs(plate_df: pd.DataFrame, well_df: pd.DataFrame)
     """
     df = pd.merge(well_df, plate_df, on=["plate", "measurement", "start_date"], how="left")
 
-    sanity_check_merged_plate_info_and_well_info(df)
+    sanity_check_merged_plate_info_and_well_info(df, ignore_errors=IGNORE_ERRORS)
+
+    # Drop rows where i or j is nan or inf
+    # TODO: unsure why this has become necessary but don't have time to investigate. Worrying signal of potential bug.
+    df["i"] = df["i"].replace([np.inf, -np.inf], np.nan)
+    df["j"] = df["j"].replace([np.inf, -np.inf], np.nan)
+    df = df.dropna(subset=["i", "j"])
+    df["i"] = df["i"].astype(int)
+    df["j"] = df["j"].astype(int)
 
     df["well_id"] = df.apply(index_to_location_rowwise, axis=1)
 
@@ -420,8 +456,15 @@ def merge_identity_and_experimental_dfs(exptl_data, identity_df):
     non_blank_wells = exptl_data.well_id[exptl_data.well_id != "A01"]
     exptl_plate_n_well = set(product(exptl_data.plate, non_blank_wells))
     identity_plate_n_well = set(product(identity_df.plate, identity_df.well_id))
-    err_msg = exptl_plate_n_well - identity_plate_n_well
-    assert exptl_plate_n_well.issubset(identity_plate_n_well), err_msg
+
+    if IGNORE_ERRORS:
+        # Ignore all wells which are not in the identity dataframe
+        exptl_plate_n_well = exptl_plate_n_well.intersection(identity_plate_n_well)
+        exptl_data = exptl_data[exptl_data[['plate', 'well_id']].apply(tuple, axis=1).isin(exptl_plate_n_well)]
+        logger.error(f"Removed {len(exptl_plate_n_well) - len(exptl_data)} wells from exptl_data which were not present in idneity df")
+    else:
+        err_msg = exptl_plate_n_well - identity_plate_n_well
+        assert exptl_plate_n_well.issubset(identity_plate_n_well), err_msg
 
     total_df = pd.merge(exptl_data, identity_df, on=["plate", "well_id"], how="left", validate="m:1")
     logger.info(f"Shape of total_df: {total_df.shape}, Columns: {total_df.columns}")

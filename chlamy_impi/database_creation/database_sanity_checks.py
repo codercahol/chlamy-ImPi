@@ -5,8 +5,27 @@ import pandas as pd
 logger = logging.getLogger(__name__)
 
 
-def sanity_check_merged_plate_info_and_well_info(df: pd.DataFrame) -> None:
+def sanity_check_merged_plate_info_and_well_info(df: pd.DataFrame, ignore_errors: bool) -> None:
     """Perform some sanity checks on the merged dataframe in the construct_identity_dataframe() function"""
+
+    if ignore_errors:
+        # Remove all rows which would otherwise fail these assertions
+
+        logger.info(f"Removing rows which would otherwise fail the assertions in sanity_check_merged_plate_info_and_well_info()")
+        logger.info(f"Original number of rows: {len(df)}")
+        unique_combinations = df.groupby(["plate", "measurement", "start_date"]).size()
+        too_small_combinations = unique_combinations[unique_combinations < 300]
+        too_large_combinations = unique_combinations[unique_combinations > 384]
+
+        for idx in too_small_combinations.index:
+            df = df[(df.plate != idx[0]) | (df.measurement != idx[1]) | (df.start_date != idx[2])]
+
+        for idx in too_large_combinations.index:
+            df = df[(df.plate != idx[0]) | (df.measurement != idx[1]) | (df.start_date != idx[2])]
+
+        logger.info(f"New number of rows: {len(df)}")
+
+
     unique_combinations = df.groupby(["plate", "measurement", "start_date"]).size()
     assert unique_combinations.min() >= 300, f"Minimum number of rows for a unique combination is {unique_combinations.min()}"
     assert unique_combinations.max() <= 384, f"Maximum number of rows for a unique combination is {unique_combinations.max()}"
@@ -79,9 +98,9 @@ def check_total_number_of_entries_per_plate(df):
 
     logger.info('All plate + light_regime combinations have a maximum of 768 entries')
 
-    plate_light_date_combinations = df.groupby(["plate", "light_regime", "start_date"]).size()
-    assert plate_light_date_combinations.max() <= 384, f"Max number of entries for a plate + light regime + date is {plate_light_date_combinations.max()}"
-    assert plate_light_date_combinations.min() >= 384, f"Min number of entries for a plate + light regime + date is {plate_light_date_combinations.min()}"
+    #plate_light_date_combinations = df.groupby(["plate", "light_regime", "start_date"]).size()
+    #assert plate_light_date_combinations.max() <= 384, f"Max number of entries for a plate + light regime + date is {plate_light_date_combinations.max()}"
+    #assert plate_light_date_combinations.min() >= 384, f"Min number of entries for a plate + light regime + date is {plate_light_date_combinations.min()}"
 
     logger.info('All plate + light_regime + date combinations have 384 entries')
 

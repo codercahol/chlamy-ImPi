@@ -64,7 +64,7 @@ def main():
             zeros = investigate_erroneous_time_points(meta_df)
             zeros_arr.append(zeros)
 
-            frames_arr[str(filename_npy)] = num_frames
+            frames_arr[filename_npy.stem] = num_frames
 
             # Use this plot to cross-check whether a frame really is erroneous
             avg_intensities = np.mean(img_array, axis=(0, 1, 3, 4))
