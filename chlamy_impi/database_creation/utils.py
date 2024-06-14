@@ -94,7 +94,7 @@ def parse_name(f, return_date: int = False):
         "2h-2h",
         "20h_ML",
         "20h_HL",
-    }, f"{time_regime}, {f}"
+    }, f"Unexpected time regime: {time_regime}, from filename: {f}"
 
     if return_date:
         date = datetime.datetime.strptime(parts[0], "%Y%m%d")

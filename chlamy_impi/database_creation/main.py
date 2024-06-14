@@ -79,13 +79,16 @@ def construct_plate_info_df() -> pd.DataFrame:
     filenames_meta, filenames_npy = get_npy_and_csv_filenames(dev_mode=DEV_MODE)
 
     rows = []
+    failed_filenames = []
 
     for filename_npy, filename_meta in zip(filenames_npy, filenames_meta):
         try:
             plate_num, measurement_num, light_regime, start_date = parse_name(filename_npy.name, return_date=True)
-        except AssertionError:
+        except AssertionError as e:
             if IGNORE_ERRORS:
+                logger.error(e)
                 logger.error(f"Error parsing name of file {filename_npy.name}. Skipping.")
+                failed_filenames.append((filename_npy.name, str(e)))
                 continue
             else:
                 raise
@@ -94,9 +97,11 @@ def construct_plate_info_df() -> pd.DataFrame:
 
         try:
             img_array, _ = prepare_img_array_and_df(filename_meta, filename_npy)
-        except AssertionError:
+        except AssertionError as e:
             if IGNORE_ERRORS:
+                logger.error(e)
                 logger.error(f"Error processing file {filename_npy.name}. Skipping.")
+                failed_filenames.append((filename_npy.name, str(e)))
                 continue
             else:
                 raise
@@ -123,7 +128,10 @@ def construct_plate_info_df() -> pd.DataFrame:
     logger.info(
         f"Constructed plate info dataframe. Shape: {df.shape}. Columns: {df.columns}."
     )
-    logger.info(f"{df.head()}")
+    logger.debug(f"{df.head()}")
+
+    if failed_filenames:
+        logger.error(f"Failed to process the following files: {failed_filenames}")
 
     return df
 
@@ -140,6 +148,7 @@ def construct_well_info_df() -> pd.DataFrame:
     filenames_meta, filenames_npy = get_npy_and_csv_filenames(dev_mode=DEV_MODE)
 
     rows = []
+    failed_filenames = []
 
     for filename_npy, filename_meta in zip(filenames_npy, filenames_meta):
         try:
@@ -147,6 +156,7 @@ def construct_well_info_df() -> pd.DataFrame:
         except AssertionError:
             if IGNORE_ERRORS:
                 logger.error(f"Error parsing name of file {filename_npy.name}. Skipping.")
+                failed_filenames.append(filename_npy.name)
                 continue
             else:
                 raise
@@ -160,6 +170,7 @@ def construct_well_info_df() -> pd.DataFrame:
         except Exception as e:
             logger.error(f"Error processing file {filename_npy.name}. Skipping.")
             logger.error(e)
+            failed_filenames.append(filename_npy.name)
             continue
 
         measurement_times = compute_measurement_times(meta_df=meta_df)
@@ -176,6 +187,7 @@ def construct_well_info_df() -> pd.DataFrame:
             if IGNORE_ERRORS:
                 logger.error(f"Error computing image features for file {filename_npy.name}. Skipping.")
                 continue
+                failed_filenames.append(filename_npy.name)
             else:
                 raise
 
@@ -223,7 +235,10 @@ def construct_well_info_df() -> pd.DataFrame:
     logger.info(
         f"Constructed image features dataframe. Shape: {df.shape}. Columns: {df.columns}."
     )
-    logger.info(f"{df.head()}")
+    logger.debug(f"{df.head()}")
+
+    logger.error(f"Failed to process the following files: {failed_filenames}")
+
     return df
 
 
@@ -267,7 +282,7 @@ def construct_gene_description_dataframe() -> pd.DataFrame:
     logger.info(
         f"Constructed description dataframe. Shape: {df_gene_descriptions.shape}."
     )
-    logger.info(f"{df_gene_descriptions.head()}")
+    logger.debug(f"{df_gene_descriptions.head()}")
     return df_gene_descriptions
 
 
@@ -288,7 +303,7 @@ def construct_mutations_dataframe() -> pd.DataFrame:
     logger.info(
         f"Constructed mutation dataframe. Shape: {df.shape}. Columns: {df.columns}."
     )
-    logger.info(f"{df.head()}")
+    logger.debug(f"{df.head()}")
     return df
 
 
@@ -387,7 +402,7 @@ def construct_identity_dataframe(
         f"Constructed identity dataframe. Shape: {df.shape}. Columns: {df.columns}."
     )
     logger.info(f"Values of num_mutations: {df.num_mutations.unique()}")
-    logger.info(f"{df.head()}")
+    logger.debug(f"{df.head()}")
 
     return df
 
@@ -468,7 +483,7 @@ def merge_identity_and_experimental_dfs(exptl_data, identity_df):
 
     total_df = pd.merge(exptl_data, identity_df, on=["plate", "well_id"], how="left", validate="m:1")
     logger.info(f"Shape of total_df: {total_df.shape}, Columns: {total_df.columns}")
-    logger.info(total_df.head())
+    logger.debug(total_df.head())
 
     logger.info(f"After merge, we have data for plates: {total_df.plate.unique()}")
     logger.info(

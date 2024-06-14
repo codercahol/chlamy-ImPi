@@ -22,7 +22,8 @@ WELL_SEGMENTATION_DIR = PROJECT_ROOT / "output" / "well_segmentation_cache"
 # Update - final sheet is now here:
 # https://docs.google.com/spreadsheets/d/1reX1t-C9rwjwhJWRowGZPUV7F4B1Wvvw/edit#gid=1935584839
 IDENTITY_SPREADSHEET_PATH = \
-    INPUT_DIR / "Finalized Identities.xlsx"
+    INPUT_DIR / "Finalized Identities Phase I plates.xlsx"
+
 
 # DATABASE_DIR is where we save the output of the database creation as .csv and parquet files
 DATABASE_DIR = PROJECT_ROOT / "output" / "database_creation"
