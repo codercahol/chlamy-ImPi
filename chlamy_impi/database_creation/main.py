@@ -199,15 +199,15 @@ def construct_well_info_df() -> pd.DataFrame:
             y2_array = compute_all_y2_averaged(img_array, mask_array)
             fv_fm_array = compute_all_fv_fm_averaged(img_array, mask_array)
             ynpq_array = compute_all_ynpq_averaged(img_array, mask_array)
-        # includes F0
-        F_array = compute_all_F_averaged(img_array, mask_array)
-        # includes Fm at t=0
-        Fm_array = compute_all_Fm_averaged(img_array, mask_array)
+            # includes F0
+            F_array = compute_all_F_averaged(img_array, mask_array)
+            # includes Fm at t=0
+            Fm_array = compute_all_Fm_averaged(img_array, mask_array)
         except AssertionError:
             if IGNORE_ERRORS:
                 logger.error(f"Error computing image features for file {filename_npy.name}. Skipping.")
-                continue
                 failed_filenames.append(filename_npy.name)
+                continue
             else:
                 raise
 
