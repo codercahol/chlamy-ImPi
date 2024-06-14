@@ -14,12 +14,19 @@ import logging
 import pandas as pd
 import numpy as np
 
-from chlamy_impi.database_creation.database_sanity_checks import sanity_check_merged_plate_info_and_well_info, \
-    check_num_mutations, check_unique_plate_well_startdate, \
-    check_total_number_of_entries_per_plate, check_plate_and_wells_are_unique, check_num_frames, \
-    check_all_plates_have_WT, check_non_null_num_mutations
+from chlamy_impi.database_creation.database_sanity_checks import (
+    sanity_check_merged_plate_info_and_well_info,
+    check_num_mutations,
+    check_unique_plate_well_startdate,
+    check_total_number_of_entries_per_plate,
+    check_plate_and_wells_are_unique,
+    check_num_frames,
+    check_all_plates_have_WT,
+    check_non_null_num_mutations,
+)
 from chlamy_impi.database_creation.error_correction import (
-    remove_repeated_initial_frame, manually_fix_erroneous_time_points,
+    remove_repeated_initial_frame,
+    manually_fix_erroneous_time_points,
 )
 from chlamy_impi.database_creation.utils import (
     index_to_location_rowwise,
@@ -30,8 +37,12 @@ from chlamy_impi.database_creation.utils import (
 )
 from chlamy_impi.lib.fv_fm_functions import compute_all_fv_fm_averaged
 from chlamy_impi.lib.mask_functions import compute_threshold_mask
-from chlamy_impi.lib.npq_functions import compute_all_npq_averaged
-from chlamy_impi.lib.y2_functions import compute_all_y2_averaged
+from chlamy_impi.lib.npq_functions import compute_all_ynpq_averaged
+from chlamy_impi.lib.y2_functions import (
+    compute_all_y2_averaged,
+    compute_all_F_averaged,
+    compute_all_Fm_averaged,
+)
 from chlamy_impi.paths import (
     get_npy_and_csv_filenames,
     get_identity_spreadsheet_path,
@@ -43,16 +54,17 @@ logger = logging.getLogger(__name__)
 DEV_MODE = False
 IGNORE_ERRORS = True
 
-pd.set_option('display.max_columns', None)
-pd.set_option('display.max_rows', None)
-
+pd.set_option("display.max_columns", None)
+pd.set_option("display.max_rows", None)
 
 
 def prepare_img_array_and_df(filename_meta, filename_npy):
     img_array = np.load(filename_npy)
     img_array = remove_repeated_initial_frame(img_array)
     meta_df = pd.read_csv(filename_meta, header=0, delimiter=";").iloc[:, :-1]
-    meta_df, img_array = manually_fix_erroneous_time_points(meta_df, img_array, filename_npy.stem)
+    meta_df, img_array = manually_fix_erroneous_time_points(
+        meta_df, img_array, filename_npy.stem
+    )
     return img_array, meta_df
 
 
@@ -83,7 +95,9 @@ def construct_plate_info_df() -> pd.DataFrame:
 
     for filename_npy, filename_meta in zip(filenames_npy, filenames_meta):
         try:
-            plate_num, measurement_num, light_regime, start_date = parse_name(filename_npy.name, return_date=True)
+            plate_num, measurement_num, light_regime, start_date = parse_name(
+            filename_npy.name, return_date=True
+        )
         except AssertionError as e:
             if IGNORE_ERRORS:
                 logger.error(e)
@@ -152,7 +166,9 @@ def construct_well_info_df() -> pd.DataFrame:
 
     for filename_npy, filename_meta in zip(filenames_npy, filenames_meta):
         try:
-            plate_num, measurement_num, light_regime, start_date = parse_name(filename_npy.name, return_date=True)
+            plate_num, measurement_num, light_regime, start_date = parse_name(
+            filename_npy.name, return_date=True
+        )
         except AssertionError:
             if IGNORE_ERRORS:
                 logger.error(f"Error parsing name of file {filename_npy.name}. Skipping.")
@@ -182,7 +198,11 @@ def construct_well_info_df() -> pd.DataFrame:
             mask_array = compute_threshold_mask(img_array)
             y2_array = compute_all_y2_averaged(img_array, mask_array)
             fv_fm_array = compute_all_fv_fm_averaged(img_array, mask_array)
-            npq_array = compute_all_npq_averaged(img_array, mask_array)
+            ynpq_array = compute_all_ynpq_averaged(img_array, mask_array)
+        # includes F0
+        F_array = compute_all_F_averaged(img_array, mask_array)
+        # includes Fm at t=0
+        Fm_array = compute_all_Fm_averaged(img_array, mask_array)
         except AssertionError:
             if IGNORE_ERRORS:
                 logger.error(f"Error computing image features for file {filename_npy.name}. Skipping.")
@@ -205,8 +225,8 @@ def construct_well_info_df() -> pd.DataFrame:
             }
 
             assert len(y2_array[i, j]) <= 81
-            assert len(npq_array[i, j]) <= 81
-            assert len(y2_array[i, j]) == len(npq_array[i, j])
+            assert len(ynpq_array[i, j]) <= 81
+            assert len(y2_array[i, j]) == len(ynpq_array[i, j])
 
             for tstep in range(
                 1, 82
@@ -218,15 +238,23 @@ def construct_well_info_df() -> pd.DataFrame:
 
             for tstep in range(1, 82):
                 try:
-                    row_data[f"npq_{tstep}"] = npq_array[i, j, tstep - 1]
+                    row_data[f"ynpq_{tstep}"] = ynpq_array[i, j, tstep - 1]
                 except IndexError:
-                    row_data[f"npq_{tstep}"] = np.nan
+                    row_data[f"ynpq_{tstep}"] = np.nan
 
             for k in range(82):
                 try:
                     row_data[f"measurement_time_{k}"] = measurement_times[k]
                 except IndexError:
                     row_data[f"measurement_time_{k}"] = np.nan
+
+            for k in range(82):
+                try:
+                    row_data[f"F_{k}"] = F_array[i, j, k]
+                    row_data[f"Fm_{k}"] = Fm_array[i, j, k]
+                except IndexError:
+                    row_data[f"F_{k}"] = np.nan
+                    row_data[f"Fm_{k}"] = np.nan
 
             rows.append(row_data)
 
@@ -246,7 +274,9 @@ def merge_plate_and_well_info_dfs(plate_df: pd.DataFrame, well_df: pd.DataFrame)
     """Merge the plate and well info dataframes. This assumes that the plate, measurement, and start_date
     columns are sufficient to uniquely identify one dataset.
     """
-    df = pd.merge(well_df, plate_df, on=["plate", "measurement", "start_date"], how="left")
+    df = pd.merge(
+        well_df, plate_df, on=["plate", "measurement", "start_date"], how="left"
+    )
 
     sanity_check_merged_plate_info_and_well_info(df, ignore_errors=IGNORE_ERRORS)
 
@@ -260,9 +290,7 @@ def merge_plate_and_well_info_dfs(plate_df: pd.DataFrame, well_df: pd.DataFrame)
 
     df["well_id"] = df.apply(index_to_location_rowwise, axis=1)
 
-    logger.info(
-        f"Constructed merged dataframe. Shape: {df.shape}."
-    )
+    logger.info(f"Constructed merged dataframe. Shape: {df.shape}.")
     return df
 
 
@@ -273,10 +301,10 @@ def construct_gene_description_dataframe() -> pd.DataFrame:
     """
     id_spreadsheet_path = get_identity_spreadsheet_path()
     assert id_spreadsheet_path.exists()
-    df = pd.read_excel(id_spreadsheet_path, header=0, engine='openpyxl')
+    df = pd.read_excel(id_spreadsheet_path, header=0, engine="openpyxl")
 
     # Create new dataframe with just the gene descriptions, one for each gene
-    df_gene_descriptions = df[["gene", "description"]]
+    df_gene_descriptions = df[["gene", "description", "feature"]]
     df_gene_descriptions = df_gene_descriptions.drop_duplicates(subset=["gene"])
 
     logger.info(
@@ -292,7 +320,7 @@ def construct_mutations_dataframe() -> pd.DataFrame:
     This is a separate table because each mutant_ID can have several mutations
     """
     identity_spreadsheet = get_identity_spreadsheet_path()
-    df = pd.read_excel(identity_spreadsheet, header=0, engine='openpyxl')
+    df = pd.read_excel(identity_spreadsheet, header=0, engine="openpyxl")
 
     # TODO: verify that we don't want to include which gene feature
     # rn if we include gene features, we double count mutations to a single gene
@@ -328,9 +356,11 @@ def construct_identity_dataframe(
 
     """
     identity_spreadsheet = get_identity_spreadsheet_path()
-    df = pd.read_excel(identity_spreadsheet, header=0, engine='openpyxl')
+    df = pd.read_excel(identity_spreadsheet, header=0, engine="openpyxl")
 
-    assert df["mutant_ID"].notnull().all(), f'Found a total of {df["mutant_ID"].isnull().sum()} null values in mutant_ID'
+    assert (
+        df["mutant_ID"].notnull().all()
+    ), f'Found a total of {df["mutant_ID"].isnull().sum()} null values in mutant_ID'
 
     # NOTE: the finalised identity spreadsheet has non-unique column names. Pandas appends .1, .2, .3, etc. to these
 
@@ -343,20 +373,36 @@ def construct_identity_dataframe(
     df = df.iloc[:-1]
 
     # Map all values of "Plate RTL" to "Plate 98" to keep with the numeric plate number format
-    df["New Location"] = df["New Location"].apply(lambda x: x.replace("Plate RTL", "Plate 98"))
+    df["New Location"] = df["New Location"].apply(
+        lambda x: x.replace("Plate RTL", "Plate 98")
+    )
 
     # Map all values of "Plate 1" to "Plate 01" in the "New Location" column
-    df["New Location"] = df["New Location"].apply(lambda x: x.replace("Plate 1", "Plate 01") if x == "Plate 1" else x)
+    df["New Location"] = df["New Location"].apply(
+        lambda x: x.replace("Plate 1", "Plate 01") if x == "Plate 1" else x
+    )
 
     # Check that all entries in the "New Location" column are of the form "Plate XX"
-    assert df["New Location"].apply(lambda x: x.startswith("Plate ")).all(), df["New Location"].unique()
-    assert df["New Location"].apply(lambda x: len(x) == 8).all(), df["New Location"].unique()
-    assert df["New Location"].apply(lambda x: x[6:].isdigit()).all(), df["New Location"].unique()
+    assert df["New Location"].apply(lambda x: x.startswith("Plate ")).all(), df[
+        "New Location"
+    ].unique()
+    assert df["New Location"].apply(lambda x: len(x) == 8).all(), df[
+        "New Location"
+    ].unique()
+    assert df["New Location"].apply(lambda x: x[6:].isdigit()).all(), df[
+        "New Location"
+    ].unique()
 
     # Check that all entries in the "New Location.4" column are of the form "A01", "B12", etc.
-    assert df["New Location.4"].apply(lambda x: len(x) == 3).all(), df["New Location.4"].unique()
-    assert df["New Location.4"].apply(lambda x: x[0] in "ABCDEFGHIJKLMNOP").all(), df["New Location.4"].unique()
-    assert df["New Location.4"].apply(lambda x: x[1:].isdigit()).all(), df["New Location.4"].unique()
+    assert df["New Location.4"].apply(lambda x: len(x) == 3).all(), df[
+        "New Location.4"
+    ].unique()
+    assert df["New Location.4"].apply(lambda x: x[0] in "ABCDEFGHIJKLMNOP").all(), df[
+        "New Location.4"
+    ].unique()
+    assert df["New Location.4"].apply(lambda x: x[1:].isdigit()).all(), df[
+        "New Location.4"
+    ].unique()
 
     # Collect columns which we need
     df = df.rename(columns={"New Location": "plate", "New Location.4": "well_id"})
@@ -370,7 +416,8 @@ def construct_identity_dataframe(
 
     # Concatenate all features into a single string, and place into feature column
     df_grouped = df_features.groupby(["mutant_ID", "plate", "well_id"]).apply(
-        lambda x: ",".join(set(x.feature)))
+        lambda x: ",".join(set(x.feature))
+    )
 
     # Convert df_grouped back into a dataframe - the index is a multi-index of (mutant_ID, plate, well_id)
     df_grouped = df_grouped.reset_index().rename(columns={0: "feature"})
@@ -389,14 +436,18 @@ def construct_identity_dataframe(
     df = pd.concat([df, df_wt], axis=0, ignore_index=False)
 
     check_plate_and_wells_are_unique(df)
-    assert df["mutant_ID"].notnull().all(), f'Found a total of {df["mutant_ID"].isnull().sum()} null values in mutant_ID'
+    assert (
+        df["mutant_ID"].notnull().all()
+    ), f'Found a total of {df["mutant_ID"].isnull().sum()} null values in mutant_ID'
     check_num_mutations(df)
 
     # Group by the plate number (the first part of the index string) to check number of wells per plate
     plates = df.plate
     plate_counts = plates.value_counts()
     for plate, count in plate_counts.items():
-        assert count <= 384, f"Plate {plate} has {count} wells with ids {df[df.plate == plate].well_id.unique()}"
+        assert (
+            count <= 384
+        ), f"Plate {plate} has {count} wells with ids {df[df.plate == plate].well_id.unique()}"
 
     logger.info(
         f"Constructed identity dataframe. Shape: {df.shape}. Columns: {df.columns}."
@@ -407,9 +458,10 @@ def construct_identity_dataframe(
     return df
 
 
-def add_mutated_genes_col(conf_threshold: float, df: pd.DataFrame, mutation_df: pd.DataFrame) -> pd.DataFrame:
-    """Add column which tells us the number of genes which were mutated, as well as comma separated list of genes
-    """
+def add_mutated_genes_col(
+    conf_threshold: float, df: pd.DataFrame, mutation_df: pd.DataFrame
+) -> pd.DataFrame:
+    """Add column which tells us the number of genes which were mutated, as well as comma separated list of genes"""
     num_rows = len(df)
 
     signif_mutations = mutation_df[mutation_df.confidence_level <= conf_threshold]
@@ -418,12 +470,18 @@ def add_mutated_genes_col(conf_threshold: float, df: pd.DataFrame, mutation_df: 
         lambda x: ",".join(set(x.gene))
     )
     mutated_genes = mutated_genes.reset_index().rename(columns={0: "mutated_genes"})
-    df = pd.merge(df, mutated_genes, on="mutant_ID", how='left')
-    df["num_mutations"] = df["mutant_ID"].apply(lambda x: gene_mutation_counts.get(x, 0))
+    df = pd.merge(df, mutated_genes, on="mutant_ID", how="left")
+    df["num_mutations"] = df["mutant_ID"].apply(
+        lambda x: gene_mutation_counts.get(x, 0)
+    )
 
-    assert len(df) == num_rows, f"Length of dataframe changed from {num_rows} to {len(df)}"
+    assert (
+        len(df) == num_rows
+    ), f"Length of dataframe changed from {num_rows} to {len(df)}"
     check_plate_and_wells_are_unique(df)
-    assert df["mutant_ID"].notnull().all(), f'Found a total of {df["mutant_ID"].isnull().sum()} null values in mutant_ID'
+    assert (
+        df["mutant_ID"].notnull().all()
+    ), f'Found a total of {df["mutant_ID"].isnull().sum()} null values in mutant_ID'
 
     return df
 
@@ -481,7 +539,9 @@ def merge_identity_and_experimental_dfs(exptl_data, identity_df):
         err_msg = exptl_plate_n_well - identity_plate_n_well
         assert exptl_plate_n_well.issubset(identity_plate_n_well), err_msg
 
-    total_df = pd.merge(exptl_data, identity_df, on=["plate", "well_id"], how="left", validate="m:1")
+    total_df = pd.merge(
+        exptl_data, identity_df, on=["plate", "well_id"], how="left", validate="m:1"
+    )
     logger.info(f"Shape of total_df: {total_df.shape}, Columns: {total_df.columns}")
     logger.debug(total_df.head())
 
@@ -497,8 +557,7 @@ def merge_identity_and_experimental_dfs(exptl_data, identity_df):
 
 
 def final_df_sanity_checks(df: pd.DataFrame):
-    """Final set of tests applied to the dataframe before we write it to parquet file
-    """
+    """Final set of tests applied to the dataframe before we write it to parquet file"""
     check_unique_plate_well_startdate(df)
     check_total_number_of_entries_per_plate(df)
     check_num_frames(df)
@@ -508,19 +567,30 @@ def final_df_sanity_checks(df: pd.DataFrame):
 
 def main():
     mutations_df = construct_mutations_dataframe()
+    logger.info(f"Constructed mutations dataframe. Shape: {mutations_df.shape}.")
     identity_df = construct_identity_dataframe(mutations_df)
+    logger.info(f"Constructed identity dataframe. Shape: {identity_df.shape}.")
 
     plate_data = construct_plate_info_df()
+    logger.info(f"Constructed plate info dataframe. Shape: {plate_data.shape}.")
     well_data = construct_well_info_df()
+    logger.info(f"Constructed well info dataframe. Shape: {well_data.shape}.")
     exptl_data = merge_plate_and_well_info_dfs(well_data, plate_data)
+    logger.info(f"Constructed merged dataframe. Shape: {exptl_data.shape}.")
 
     total_df = merge_identity_and_experimental_dfs(exptl_data, identity_df)
+    logger.info(f"Constructed total dataframe. Shape: {total_df.shape}.")
 
+    logger.info("Sanity checks on final dataframe...")
     final_df_sanity_checks(total_df)
+    logger.info("All sanity checks passed.")
+    logger.info("Writing dataframe to parquet file...")
     save_df_to_parquet(total_df)
 
+    logger.info("Constructing gene descriptions dataframe...")
     gene_descriptions = construct_gene_description_dataframe()
     write_dataframe(gene_descriptions, f"gene_descriptions.csv")
+    logger.info("Successfully generated new database files!!!")
 
 
 if __name__ == "__main__":
