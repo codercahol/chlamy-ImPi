@@ -75,7 +75,14 @@ def parse_name(f, return_date: int = False):
     assert len(parts) in {3, 4}, f
 
     middle = parts[1].split("-")
-    plate_num = int(middle[0])
+
+    try:
+        plate_num = int(middle[0])
+        assert plate_num != 98  # See below
+    except ValueError:
+        assert middle[0] == 'RTL'
+        plate_num = 98  # Note: we are internally storing plate RTL as plate 98
+
     measurement_num = middle[1]
 
     if len(parts) == 3:
@@ -85,7 +92,7 @@ def parse_name(f, return_date: int = False):
         assert len(parts[3].split(".")) == 2, f
         time_regime = parts[2] + "_" + parts[3].split(".")[0]
 
-    assert plate_num in set([x for x in range(25)] + [99,]), f
+    assert plate_num in set([x for x in range(25)] + [99, 98]), f
     assert re.match(r"M[1-8]", measurement_num), f
     assert time_regime in {
         "30s-30s",
@@ -94,6 +101,7 @@ def parse_name(f, return_date: int = False):
         "2h-2h",
         "20h_ML",
         "20h_HL",
+        "1min-5min",
     }, f"Unexpected time regime: {time_regime}, from filename: {f}"
 
     if return_date:
