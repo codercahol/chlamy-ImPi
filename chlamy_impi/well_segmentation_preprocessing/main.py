@@ -8,7 +8,7 @@
 import logging
 
 import numpy as np
-from segment_multiwell_plate.segment_multiwell_plate import correct_rotations
+from segment_multiwell_plate.segment_multiwell_plate import _correct_rotations_l1nn
 from skimage import io
 from segment_multiwell_plate import segment_multiwell_plate, find_well_centres
 from tqdm import tqdm
@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 logging.getLogger("matplotlib").setLevel(logging.WARNING)
 
 
-OUTPUT_VISUALISATIONS = True
+OUTPUT_VISUALISATIONS = False
 LOGGING_LEVEL = logging.DEBUG
 
 
@@ -69,8 +69,11 @@ def main():
         logger.debug(f"NUM_TIMESTEPS={tif.shape[0]}")
 
         tif = remove_failed_photos(tif)
-
         tif = remove_repeated_initial_frame_tif(tif)
+
+        assert len(tif.shape) == 3
+        for frame in tif:
+            assert np.std(frame) > 1e-6  # Check that no blank frames remain
 
         # Note - if these parameters need to be tuned, see test_rotation_correction.py
         img_array, well_coords, i_vals, j_vals = segment_multiwell_plate(
@@ -80,6 +83,8 @@ def main():
             output_full=True,
         )
 
+        assert_expected_shape(i_vals, j_vals, plate_num)
+
         save_img_array(img_array, name)
 
         if OUTPUT_VISUALISATIONS:
@@ -87,32 +92,7 @@ def main():
             visualise_well_histograms(img_array, name, savedir=well_segmentation_histogram_dir_path(name))
             visualise_grid_crop(tif, img_array, i_vals, j_vals, well_coords, savedir=well_segmentation_visualisation_dir_path(name))
 
-        assert_expected_shape(i_vals, j_vals, plate_num)
-
     logger.info("Program completed normally")
-
-
-def correct_image_rotation(im: np.array, well_coords: np.array, blob_log_kwargs: dict):
-    """
-    Correct the rotation of an image by finding the rotation angle and applying it to the image
-    """
-    rotated_im, rotation_angle = correct_rotations(im, well_coords, return_theta=True)
-
-    # Iterate on the rotation correction, adding some random jitter on the well coordinates to smooth out errors in well centre estimation
-    if rotation_angle > 0.01:
-        print(f"Found rotation angle of {rotation_angle:.2g} rad. Iterating on correction")
-        thetas = [rotation_angle]
-        n_iters = 5
-
-        for i in range(n_iters):
-            well_coords_it = find_well_centres(rotated_im, **blob_log_kwargs)
-            well_coords_it += np.random.normal(0, 0.5, well_coords_it.shape)
-            rotated_im, rotation_angle = correct_rotations(rotated_im, well_coords_it, return_theta=True)
-            thetas.append(rotation_angle)
-
-        rotation_angle = np.sum(thetas)
-
-    return rotated_im, rotation_angle
 
 
 if __name__ == "__main__":

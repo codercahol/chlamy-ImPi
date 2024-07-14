@@ -12,7 +12,7 @@ PROJECT_ROOT = Path(__file__).parent.parent
 
 # INPUT DIR should contain .tif and .csv files from the camera data folder on google drive
 # https://drive.google.com/drive/folders/1rU8VOIdwBuDX_N6MTn0Bg5SYYb-Ov8zv
-INPUT_DIR = PROJECT_ROOT / "data"
+INPUT_DIR = PROJECT_ROOT / "data_13062024"
 
 # WELL_SEGMENTATION_DIR is where we save the output of the well segmentation as .npy files
 WELL_SEGMENTATION_DIR = PROJECT_ROOT / "output" / "well_segmentation_cache"
