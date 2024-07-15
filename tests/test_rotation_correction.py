@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 from segment_multiwell_plate.segment_multiwell_plate import _average_d_min, find_well_centres, \
     _generate_grid_crop_coordinates, correct_image_rotation
 
-from chlamy_impi.database_creation.error_correction import remove_failed_photos, remove_repeated_initial_frame_tif
+from chlamy_impi.database_creation.manual_error_correction import remove_failed_photos, remove_repeated_initial_frame_tif
 from chlamy_impi.database_creation.utils import parse_name
 from chlamy_impi.paths import find_all_tif_images
 from chlamy_impi.well_segmentation_preprocessing.main import load_image

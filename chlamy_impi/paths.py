@@ -5,6 +5,9 @@ that a path is needed, rather than hardcoding the path somewhere else.
 from pathlib import Path
 import logging
 
+import numpy as np
+import pandas as pd
+
 logger = logging.getLogger(__name__)
 
 
@@ -91,6 +94,15 @@ def get_npy_and_csv_filenames(dev_mode: bool = False):
     logger.info(f"Found {len(filenames_npy)} files in {INPUT_DIR}")
 
     return filenames_meta, filenames_npy
+
+
+def get_npy_and_csv_filenames_given_basename(basename: str) -> tuple[pd.DataFrame, np.array]:
+    """Given a base name, load the corresponding meta df and image array
+    """
+    meta_df = pd.read_csv(INPUT_DIR / f"{basename}.csv", header=0, delimiter=";").iloc[:, :-1]
+    img_array = np.load(WELL_SEGMENTATION_DIR / f"{basename}.npy")
+
+    return meta_df, img_array
 
 
 def validate_inputs():

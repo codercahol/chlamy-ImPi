@@ -13,7 +13,7 @@ from skimage import io
 from segment_multiwell_plate import segment_multiwell_plate, find_well_centres
 from tqdm import tqdm
 
-from chlamy_impi.database_creation.error_correction import remove_failed_photos, remove_repeated_initial_frame_tif
+from chlamy_impi.database_creation.manual_error_correction import remove_failed_photos, remove_repeated_initial_frame_tif
 from chlamy_impi.database_creation.utils import parse_name
 from chlamy_impi.lib.visualize_well_segmentation import visualise_channels, visualise_well_histograms, \
     visualise_grid_crop

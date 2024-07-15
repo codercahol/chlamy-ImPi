@@ -2,6 +2,8 @@ import logging
 
 import pandas as pd
 
+from chlamy_impi.database_creation.constants import get_possible_frame_numbers
+
 logger = logging.getLogger(__name__)
 
 
@@ -85,18 +87,17 @@ def check_unique_plate_well_startdate(df: pd.DataFrame):
 
 
 def check_total_number_of_entries_per_plate(df):
-    """Check that each plate + light_regime combination has a maximum of 768 entries.
-    The upper limit is 768 because a couple of plates have been repeated
+    """Check that each plate + light_regime combination has a maximum of 384 entries.
     """
-    plate_light_regime_combinations = df.groupby(["plate", "light_regime"]).size()
+    plate_light_regime_date_combinations = df.groupby(["plate", "light_regime", "start_date"]).size()
 
-    for idx, count in plate_light_regime_combinations.items():
-        if count > 768:
-            print(df[(df.plate == idx[0]) & (df.light_regime == idx[1])])
+    for idx, count in plate_light_regime_date_combinations.items():
+        if count > 384:
+            print(df[(df.plate == idx[0]) & (df.light_regime == idx[1]) & (df.start_date == idx[2])].iloc[0])
 
-    assert plate_light_regime_combinations.max() <= 768, f"Max number of entries for a plate + light regime is {plate_light_regime_combinations.max()}"
+    assert plate_light_regime_date_combinations.max() <= 384, f"Max number of entries for a plate + light regime is {plate_light_regime_date_combinations.max()}"
 
-    logger.info('All plate + light_regime combinations have a maximum of 768 entries')
+    logger.info('All plate + light_regime + date combinations have a maximum of 384 entries')
 
     #plate_light_date_combinations = df.groupby(["plate", "light_regime", "start_date"]).size()
     #assert plate_light_date_combinations.max() <= 384, f"Max number of entries for a plate + light regime + date is {plate_light_date_combinations.max()}"
@@ -106,7 +107,7 @@ def check_total_number_of_entries_per_plate(df):
 
 
 def check_plate_and_wells_are_unique(df):
-    """This sanity check is all about ensuring that each plate/well combo only has a single mutant_ID
+    """This sanity check is all about ensuring that each plate/well combo only has a single mutant_ID.
     """
     error_message = ''
     plates = df.plate
@@ -121,11 +122,12 @@ def check_plate_and_wells_are_unique(df):
 
 
 def check_num_frames(df):
-    """Check that the number of frames is equal to 164 or 82"""
+    """Check that the number of frames is as expected
+    """
     assert df["num_frames"].notnull().all(), "Found null values in num_frames column"
-    assert df["num_frames"].isin([84, 164]).all(), f"Found num_frames values that are not 84 or 164: {df['num_frames'].unique()}"
+    assert df["num_frames"].isin(get_possible_frame_numbers()).all(), f"Found num_frames values that are not 84 or 164: {df['num_frames'].unique()}"
 
-    logger.info('All num_frames column values are non-null and are either 84 or 164')
+    logger.info('All num_frames column values are non-null and are expected')
 
 
 def check_all_plates_have_WT(df):

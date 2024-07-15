@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
 
-from chlamy_impi.database_creation.error_correction import remove_repeated_initial_frame
+from chlamy_impi.database_creation.manual_error_correction import remove_repeated_initial_frame
 from chlamy_impi.database_creation.utils import parse_name
 from chlamy_impi.paths import get_npy_and_csv_filenames
 
@@ -54,22 +54,24 @@ def main():
 
     for time_regime, data in time_regime_to_metadf.items():
 
-        fig, axs = plt.subplots(1, 2, figsize=(12, 4), dpi=200)
+        fig, axs = plt.subplots(1, 2, figsize=(20, 8), dpi=200)
+
+        all_increments = []
 
         for plate_num, df in data:
             times = df["Time"].values
             dates = df["Date"].values
             timestamps = combine_date_and_time(dates, times)
             reference_time = timestamps[0]
-            relative_time_hrs = (timestamps - reference_time).astype('timedelta64[s]') / 3600.0
-            axs[0].scatter(range(len(relative_time_hrs)), relative_time_hrs, label=f"Plate {plate_num}", s=4)
-
-            time_increment_mins = np.diff(timestamps).astype('timedelta64[s]') / 60.0
-            axs[1].scatter(range(len(time_increment_mins)), time_increment_mins, label=f"Plate {plate_num}", s=4)
+            relative_time = (timestamps - reference_time).astype('timedelta64[s]')
+            axs[0].scatter(range(len(relative_time)), relative_time, label=f"Plate {plate_num}", s=8)
+            time_increment = (timestamps[1:] - timestamps[:-1]).astype('timedelta64[s]')
+            all_increments.extend(time_increment)
+            axs[1].scatter(range(len(time_increment)), time_increment, label=f"Plate {plate_num}", s=8)
 
         ax = axs[0]
         ax.set_title(f"Time regime: {time_regime}")
-        ax.set_ylabel("Time (hours)")
+        ax.set_ylabel("Time [s]")
         ax.set_xlabel("Frame number")
 
         box = ax.get_position()
@@ -78,7 +80,7 @@ def main():
 
         ax = axs[1]
         ax.set_title(f"Time regime: {time_regime}")
-        ax.set_ylabel("Time increment relative to last measurement (mins)")
+        ax.set_ylabel("Time increment relative to last measurement [s]")
         ax.set_xlabel("Frame number")
 
         box = ax.get_position()
@@ -87,6 +89,16 @@ def main():
 
         fig.savefig(f"time_regime_{time_regime}.png")
         plt.close()
+
+        fig, ax = plt.subplots(1, 1, figsize=(10, 6), dpi=200)
+        ax.hist([x.astype(float) for x in all_increments], bins=100)
+        ax.set_title(f"Time regime: {time_regime}")
+        ax.set_xlabel("Time increment relative to last measurement [s]")
+        ax.set_ylabel("Frequency")
+        ax.set_yscale('log')
+        fig.savefig(f"time_regime_{time_regime}_hist.png")
+        plt.close()
+
 
 
 

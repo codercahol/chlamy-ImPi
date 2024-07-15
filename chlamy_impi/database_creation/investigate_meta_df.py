@@ -1,6 +1,6 @@
 """
 After running well_segmentation_preprocessing/main.py with new data, run this script to check for any
-new errors. Then, edit error_correction.py:manually_fix_erroneous_time_points to fix them.
+new errors. Then, edit manual_error_correction.py:manually_fix_erroneous_time_points to fix them.
 """
 
 from itertools import product
@@ -11,7 +11,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 
-from chlamy_impi.database_creation.error_correction import (
+from chlamy_impi.database_creation.manual_error_correction import (
     remove_repeated_initial_frame, manually_fix_erroneous_time_points,
 )
 from chlamy_impi.paths import get_npy_and_csv_filenames

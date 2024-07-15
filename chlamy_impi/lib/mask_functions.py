@@ -90,17 +90,17 @@ def compute_thresholds(img_arr, num_std: float = 3.0, lighting="both"):
     assert light_img_brightness > dark_img_brightness
 
     if lighting == "both":
-        logger.info("Computing dark and light thresholds")
+        logger.debug("Computing dark and light thresholds")
         dark_threshold = _compute_threshold(img_arr[:, :, dark_idxs], num_std)
-        logger.info(f"Dark threshold = {dark_threshold}")
+        logger.debug(f"Dark threshold = {dark_threshold}")
 
         light_threshold = _compute_threshold(img_arr[:, :, light_idxs], num_std)
-        logger.info(f"Light threshold = {light_threshold}")
+        logger.debug(f"Light threshold = {light_threshold}")
         out = (dark_threshold, light_threshold)
     elif lighting == "all":
-        logger.info("Computing threshold using all images")
+        logger.debug("Computing threshold using all images")
         threshold = _compute_threshold(img_arr, num_std)
-        logger.info(f"Threshold = {threshold}")
+        logger.debug(f"Threshold = {threshold}")
         out = (threshold, None)
     else:
         raise ValueError("lighting must be 'both' or 'all'")

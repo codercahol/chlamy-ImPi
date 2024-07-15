@@ -8,6 +8,7 @@ import pandas as pd
 import pyarrow as pa
 from pyarrow import parquet as pq
 
+from chlamy_impi.database_creation.constants import get_possible_frame_numbers
 from chlamy_impi.paths import get_database_output_dir, get_parquet_filename
 
 logger = logging.getLogger(__name__)
@@ -52,18 +53,24 @@ def index_to_location_rowwise(x):
 
 def spreadsheet_plate_to_numeric(plate: str) -> int:
     """Convert a plate string, e.g. "Plate 01", to a numeric value, e.g. 1"""
-    assert plate.startswith("Plate ")
+    assert plate.startswith("Plate "), f"Unexpected plate string: {plate}"
     number_str = plate[6:]
 
-    assert len(number_str) == 2
-    assert number_str[0] in "0123456789"
-    assert number_str[1] in "0123456789"
+    assert len(number_str) <= 4
 
-    num = int(number_str)
+    if len(number_str) == 2:
+        assert number_str[0] in "0123456789"
+        assert number_str[1] in "0123456789"
+        num = int(number_str)
+        assert 1 <= num <= 99
+        return num
+    elif len(number_str) == 4:
+        custom_mapping = {
+            '30.1': 97, '30.2': 96, '30.3': 95
+        }
+        assert number_str in custom_mapping
+        return custom_mapping[number_str]
 
-    assert 1 <= num <= 99
-
-    return num
 
 
 def parse_name(f, return_date: int = False):
@@ -136,7 +143,7 @@ def compute_measurement_times(meta_df: pd.DataFrame) -> list[datetime.datetime]:
         axis=1,
     )
 
-    assert len(meta_df) <= 82
+    assert len(meta_df) <= max(get_possible_frame_numbers()) - 2, f"Unexpected number of rows in meta_df: {len(meta_df)}"
     return meta_df["Datetime"].tolist()
 
 
