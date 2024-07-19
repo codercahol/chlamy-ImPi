@@ -1,11 +1,11 @@
+import functools
 import logging
 
 import pandas as pd
 
 from chlamy_impi.database_creation.database_sanity_checks import check_plate_and_wells_are_unique, check_num_mutations
-from chlamy_impi.database_creation.utils import spreadsheet_plate_to_numeric
-from chlamy_impi.paths import get_identity_spreadsheet_path
-
+from chlamy_impi.database_creation.utils import spreadsheet_plate_name_formatting
+from chlamy_impi.paths import get_identity_spreadsheet_path, get_npy_and_csv_filenames
 
 logger = logging.getLogger(__name__)
 
@@ -45,11 +45,6 @@ def construct_identity_dataframe(mutation_df: pd.DataFrame, conf_threshold: int 
     # Drop the final row which just says "Z-END"
     df = df.iloc[:-1]
 
-    # Map all values of "Plate RTL" to "Plate 98" to keep with the numeric plate number format
-    df["New Location"] = df["New Location"].apply(
-        lambda x: x.replace("Plate RTL", "Plate 98")
-    )
-
     # Map all values of "Plate 1" to "Plate 01" in the "New Location" column
     df["New Location"] = df["New Location"].apply(
         lambda x: x.replace("Plate 1", "Plate 01") if x == "Plate 1" else x
@@ -72,8 +67,10 @@ def construct_identity_dataframe(mutation_df: pd.DataFrame, conf_threshold: int 
     ].unique()
 
     # Collect columns which we need
+    _, filenames_npy = get_npy_and_csv_filenames(dev_mode=False)
     df = df.rename(columns={"New Location": "plate", "New Location.4": "well_id"})
-    df["plate"] = df["plate"].apply(spreadsheet_plate_to_numeric)
+    df["plate"] = df["plate"].apply(
+        functools.partial(spreadsheet_plate_name_formatting, filenames_npy=filenames_npy))
     df_features = df[["mutant_ID", "plate", "well_id", "feature"]]
     df = df[["mutant_ID", "plate", "well_id"]]
 
@@ -119,6 +116,7 @@ def construct_identity_dataframe(mutation_df: pd.DataFrame, conf_threshold: int 
     logger.info(
         f"Constructed identity dataframe. Shape: {df.shape}. Columns: {df.columns}."
     )
+    logger.info(f"Unique plate values: {df.plate.unique()}")
     logger.info(f"Values of num_mutations: {df.num_mutations.unique()}")
     logger.debug(f"{df.head()}")
 
@@ -158,7 +156,7 @@ def create_wt_rows() -> list[dict]:
     rows = []
     for well in well_position_iterator():
         row_data = {
-            "plate": 99,
+            "plate": '99',
             "well_id": well,
             "mutant_ID": "WT",
             "num_mutations": 0,

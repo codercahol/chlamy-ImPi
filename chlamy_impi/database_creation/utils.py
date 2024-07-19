@@ -1,5 +1,6 @@
 import datetime
 import re
+from pathlib import Path
 from typing import Optional, List
 import logging
 
@@ -51,8 +52,8 @@ def index_to_location_rowwise(x):
     return f"{letter}{number:02d}"
 
 
-def spreadsheet_plate_to_numeric(plate: str) -> int:
-    """Convert a plate string, e.g. "Plate 01", to a numeric value, e.g. 1"""
+def spreadsheet_plate_name_formatting(plate: str, filenames_npy: Optional[list[Path]] = None) -> str:
+    """Convert a plate string, e.g. "Plate 01", to a equal value to the numpy files, e.g. 1"""
     assert plate.startswith("Plate "), f"Unexpected plate string: {plate}"
     number_str = plate[6:]
 
@@ -61,22 +62,23 @@ def spreadsheet_plate_to_numeric(plate: str) -> int:
     if len(number_str) == 2:
         assert number_str[0] in "0123456789"
         assert number_str[1] in "0123456789"
-        num = int(number_str)
-        assert 1 <= num <= 99
-        return num
-    elif len(number_str) == 4:
-        custom_mapping = {
-            '30.1': 97, '30.2': 96, '30.3': 95
-        }
-        assert number_str in custom_mapping
-        return custom_mapping[number_str]
+        assert 1 <= int(number_str) <= 99
 
+        if number_str[0] == "0":
+            number_str = number_str[1]
+
+    if filenames_npy is not None:
+        # Then assert that number_str is in filenames_npy
+        npy_filenames = set([x.stem for x in filenames_npy])
+        if not number_str in npy_filenames:
+            logger.warning(f"Number {number_str} not found in filenames_npy")
+
+    assert isinstance(number_str, str)
+    return number_str
 
 
 def parse_name(f, return_date: int = False):
     """Parse the name of a file, e.g. `20200303_7-M4_2h-2h.npy` or `20231119_07-M3_20h_ML.npy`
-
-    TODO: refactor the codebase so that plate number is a string, not an int
     """
     f = str(f)
     parts = f.split("_")
@@ -84,27 +86,7 @@ def parse_name(f, return_date: int = False):
     assert len(parts) in {3, 4}, f
 
     middle = parts[1].split("-")
-
-    try:
-        plate_num = int(middle[0])
-        assert plate_num != 98  # See below
-        assert plate_num != 97
-        assert plate_num != 96
-        assert plate_num != 95
-        assert plate_num != 94
-    except ValueError:
-        if middle[0] == 'RTL':
-            plate_num = 98  # Note: we are internally storing plate RTL as plate 98
-        elif middle[0] == '30v1':
-            plate_num = 97
-        elif middle[0] == '30v2':
-            plate_num = 96
-        elif middle[0] == '30v3':
-            plate_num = 95
-        elif middle[0] == '98v1':
-            plate_num = 94
-        else:
-            raise ValueError(f"Unexpected plate number: {middle[0]}")
+    plate_num = middle[0]
 
     measurement_num = middle[1]
 
@@ -115,7 +97,6 @@ def parse_name(f, return_date: int = False):
         assert len(parts[3].split(".")) == 2, f
         time_regime = parts[2] + "_" + parts[3].split(".")[0]
 
-    assert plate_num in set([x for x in range(100)]), f
     assert re.match(r"M[1-8]", measurement_num), f
     assert time_regime in {
         "30s-30s",

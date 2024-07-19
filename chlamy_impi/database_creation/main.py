@@ -6,6 +6,7 @@ The script is controlled using hard-coded constants at the top of the file. Thes
 The database construction depends on the prior download of all .csv files into the data directory, as well as
 running the well segmentation preprocessing script to generate the .npy files.
 
+TODO: we need to also generate a text file with one line per npy/tif file, indicating processing status of this file.
 """
 
 from itertools import product
@@ -98,6 +99,13 @@ def construct_plate_info_df() -> pd.DataFrame:
 
     rows = []
     failed_filenames = []
+
+    # Print all unique plate numbers
+    plate_numbers = set()
+    for filename_npy in filenames_npy:
+        plate_num, _, _, _ = parse_name(filename_npy.name, return_date=True)
+        plate_numbers.add(plate_num)
+    logger.info(f"Unique plate numbers: {plate_numbers}")
 
     for filename_npy, filename_meta in zip(filenames_npy, filenames_meta):
         plate_num, measurement_num, light_regime, start_date = parse_name(filename_npy.name, return_date=True)
