@@ -55,9 +55,6 @@ logger = logging.getLogger(__name__)
 DEV_MODE = False
 IGNORE_ERRORS = True
 
-pd.set_option("display.max_columns", None)
-pd.set_option("display.max_rows", None)
-
 
 def prepare_img_array_and_df(filename_meta, filename_npy):
     """Load the image array (pre segmented into wells) and the metadata dataframe for a given plate,
@@ -71,7 +68,7 @@ def prepare_img_array_and_df(filename_meta, filename_npy):
     return img_array, meta_df
 
 
-def construct_plate_info_df() -> pd.DataFrame:
+def construct_plate_info_df() -> tuple[pd.DataFrame, list]:
     """
     Construct a dataframe with the logistical information about each plate.
 
@@ -117,8 +114,8 @@ def construct_plate_info_df() -> pd.DataFrame:
         except AssertionError as e:
             if IGNORE_ERRORS:
                 logger.error(e)
-                logger.error(f"Error processing file {filename_npy.name}. Skipping.")
-                failed_filenames.append((filename_npy.name, str(e)))
+                logger.error(f"Error processing file {filename_npy.stem}. Skipping.")
+                failed_filenames.append({'filename': filename_npy.stem, 'error': str(e)})
                 continue
             else:
                 raise
@@ -151,10 +148,10 @@ def construct_plate_info_df() -> pd.DataFrame:
         logging.error(f"Failed to process total of {len(failed_filenames)} files")
         logger.error(f"Failed to process the following files in plate info df: {failed_filenames}")
 
-    return df
+    return df, failed_filenames
 
 
-def construct_well_info_df() -> pd.DataFrame:
+def construct_well_info_df(failed_filenames: list[dict]) -> tuple[pd.DataFrame, list[dict]]:
     """Construct a dataframe containing all the time-series data from experiments and image segmentation
      This includes image features, such as Fv/Fm, Y2, NPQ, and the times at which they were measured
 
@@ -171,10 +168,10 @@ def construct_well_info_df() -> pd.DataFrame:
         - measurement_time_0, measurement_time_2, ..., measurement_time_81
     """
 
-    filenames_meta, filenames_npy = get_npy_and_csv_filenames(dev_mode=DEV_MODE)
+    failed_filename_stems = [x['filename'] for x in failed_filenames]
+    filenames_meta, filenames_npy = get_npy_and_csv_filenames(dev_mode=DEV_MODE, failed_filenames=failed_filename_stems)
 
     rows = []
-    failed_filenames = []
 
     for filename_npy, filename_meta in zip(filenames_npy, filenames_meta):
         plate_num, measurement_num, light_regime, start_date = parse_name(filename_npy.name, return_date=True)
@@ -186,9 +183,9 @@ def construct_well_info_df() -> pd.DataFrame:
         try:
             img_array, meta_df = prepare_img_array_and_df(filename_meta, filename_npy)
         except Exception as e:
-            logger.error(f"Error processing file {filename_npy.name}. Skipping.")
+            logger.error(f"Error processing file {filename_npy.stem}. Skipping.")
             logger.error(e)
-            failed_filenames.append((filename_npy.name, str(e)))
+            failed_filenames.append({'filename': filename_npy.stem, 'error': str(e)})
             continue
 
         measurement_times = compute_measurement_times(meta_df=meta_df)
@@ -210,7 +207,7 @@ def construct_well_info_df() -> pd.DataFrame:
         except AssertionError as e:
             if IGNORE_ERRORS:
                 logger.error(f"Error computing image features for file {filename_npy.name}. Skipping.")
-                failed_filenames.append((filename_npy.name, str(e)))
+                failed_filenames.append({'filename': filename_npy.stem, 'error': str(e)})
                 continue
             else:
                 raise
@@ -274,7 +271,7 @@ def construct_well_info_df() -> pd.DataFrame:
         logger.info(f"Failed to process total of {len(failed_filenames)} files")
         logger.error(f"Failed to process the following files in well_info_df: {failed_filenames}")
 
-    return df
+    return df, failed_filenames
 
 
 def merge_plate_and_well_info_dfs(plate_df: pd.DataFrame, well_df: pd.DataFrame):
@@ -288,7 +285,6 @@ def merge_plate_and_well_info_dfs(plate_df: pd.DataFrame, well_df: pd.DataFrame)
     sanity_check_merged_plate_info_and_well_info(df, ignore_errors=IGNORE_ERRORS)
 
     # Drop rows where i or j is nan or inf
-    # TODO: unsure why this has become necessary but don't have time to investigate. Worrying signal of potential bug.
     df["i"] = df["i"].replace([np.inf, -np.inf], np.nan)
     df["j"] = df["j"].replace([np.inf, -np.inf], np.nan)
     df = df.dropna(subset=["i", "j"])
@@ -363,7 +359,7 @@ def write_dataframe(df: pd.DataFrame, name: str):
     logger.info(f"Written dataframe to {output_dir / name}")
 
 
-def merge_identity_and_experimental_dfs(exptl_data, identity_df):
+def merge_identity_and_experimental_dfs(exptl_data, identity_df, failed_filenames):
     # TODO - "A1" blanks often just generate NaNs
     # how to make them more useful? (we'd like them as a control)
 
@@ -375,8 +371,15 @@ def merge_identity_and_experimental_dfs(exptl_data, identity_df):
     # Log which plates are being removed from each df
     removed_exptl_plates = set(exptl_plates) - common_plates
     removed_identity_plates = set(identity_plates) - common_plates
-    logger.error(f"Removed plates from exptl_data which were not found in identity df: {removed_exptl_plates}")
-    logger.error(f"Removed plates from identity_df which were not found in exptl df: {removed_identity_plates}")
+    logger.error(f"Removed plates from experimental data which were not found in identity spreadsheet: {removed_exptl_plates}")
+    logger.error(f"Removed plates from identity spreadsheet which were not found in experimental data: {removed_identity_plates}")
+
+    # Go through all filenames and log errors if they were not found in the identity spreadsheet
+    filenames_npy, _ = get_npy_and_csv_filenames(dev_mode=DEV_MODE, failed_filenames=failed_filenames)
+    for filename_npy in filenames_npy:
+        plate_num, measurement_num, light_regime, start_date = parse_name(filename_npy.name, return_date=True)
+        if plate_num in removed_exptl_plates:
+            failed_filenames.append({'filename': filename_npy.stem, 'error': f"Plate {plate_num} not found in identity spreadsheet"})
 
     exptl_data = exptl_data[exptl_data.plate.isin(common_plates)]
     identity_df = identity_df[identity_df.plate.isin(common_plates)]
@@ -410,7 +413,7 @@ def merge_identity_and_experimental_dfs(exptl_data, identity_df):
         f"After merge, we have data for measurement numbers: {total_df.measurement.unique()}"
     )
 
-    return total_df
+    return total_df, failed_filenames
 
 
 def final_df_sanity_checks(df: pd.DataFrame):
@@ -439,14 +442,14 @@ def main():
     gene_descriptions = construct_gene_description_dataframe()
     write_dataframe(gene_descriptions, f"gene_descriptions.csv")
 
-    plate_data = construct_plate_info_df()
+    plate_data, failed_files = construct_plate_info_df()
     logger.info(f"Constructed plate info dataframe. Shape: {plate_data.shape}.")
-    well_data = construct_well_info_df()
+    well_data, failed_files = construct_well_info_df(failed_filenames=failed_files)
     logger.info(f"Constructed well info dataframe. Shape: {well_data.shape}.")
     exptl_data = merge_plate_and_well_info_dfs(well_data, plate_data)
     logger.info(f"Constructed merged dataframe. Shape: {exptl_data.shape}.")
 
-    total_df = merge_identity_and_experimental_dfs(exptl_data, identity_df)
+    total_df, failed_files = merge_identity_and_experimental_dfs(exptl_data, identity_df, failed_files)
     logger.info(f"Constructed total dataframe. Shape: {total_df.shape}.")
 
     logger.info("Sanity checks on final dataframe...")
@@ -454,9 +457,26 @@ def main():
     logger.info("All sanity checks passed.")
     print_final_df_stats(total_df)
 
+    report_file_processing_status(failed_files, total_df)
+
     logger.info("Writing dataframe to parquet file...")
     save_df_to_parquet(total_df)
     logger.info("Successfully generated new database files!!!")
+
+
+def report_file_processing_status(failed_files, total_df):
+
+    # Add rows for all the successful files - get start date / plate number / measurement number from df
+    successful_files = total_df[['plate', 'measurement', 'start_date', 'light_regime']].drop_duplicates().apply(
+        lambda x: f"{x['start_date'].strftime('%Y%m%d')}_{x['plate']}_{x['measurement']}_{x['light_regime']}", axis = 1).tolist()
+
+    for f in successful_files:
+        failed_files.append({'filename': f, 'error': 'Successfully processed'})
+
+    filenames_npy, _ = get_npy_and_csv_filenames(dev_mode=False)
+    assert len(filenames_npy) == len(failed_files)
+
+    write_dataframe(pd.DataFrame(failed_files), f"failed_files.csv")
 
 
 if __name__ == "__main__":

@@ -67,10 +67,9 @@ def construct_identity_dataframe(mutation_df: pd.DataFrame, conf_threshold: int 
     ].unique()
 
     # Collect columns which we need
-    _, filenames_npy = get_npy_and_csv_filenames(dev_mode=False)
     df = df.rename(columns={"New Location": "plate", "New Location.4": "well_id"})
     df["plate"] = df["plate"].apply(
-        functools.partial(spreadsheet_plate_name_formatting, filenames_npy=filenames_npy))
+        functools.partial(spreadsheet_plate_name_formatting, filenames_npy=None))
     df_features = df[["mutant_ID", "plate", "well_id", "feature"]]
     df = df[["mutant_ID", "plate", "well_id"]]
 

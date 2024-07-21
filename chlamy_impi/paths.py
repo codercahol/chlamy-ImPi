@@ -67,7 +67,7 @@ def get_parquet_filename():
     return DATABASE_DIR / "database.parquet"
 
 
-def get_npy_and_csv_filenames(dev_mode: bool = False):
+def get_npy_and_csv_filenames(dev_mode: bool = False, failed_filenames: list[str] = None) -> tuple[list[Path], list[Path]]:
     """In this function, we get a list of all the .npy and .csv files in the input directory
 
     We also check that the two lists of filenames are the same, and that the .csv files exist
@@ -76,6 +76,10 @@ def get_npy_and_csv_filenames(dev_mode: bool = False):
     assert INPUT_DIR.exists()
 
     filenames_npy = list(WELL_SEGMENTATION_DIR.glob("*.npy"))
+
+    if failed_filenames:
+        filenames_npy = [x for x in filenames_npy if not x.stem in failed_filenames]
+
     filenames_npy.sort()
 
     filenames_meta = [INPUT_DIR / x.with_suffix(".csv").name for x in filenames_npy]

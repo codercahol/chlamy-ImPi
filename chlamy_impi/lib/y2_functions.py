@@ -1,4 +1,5 @@
 import numpy as np
+from matplotlib import pyplot as plt
 
 
 def get_background_intensity(img_array, mask_array) -> np.array:
@@ -33,25 +34,19 @@ def compute_all_y2_averaged(img_array, mask_array) -> np.array:
     # Compute pixelwise Y2 values, for every pixel, ignoring mask
     Fm_prime_array = img_array[:, :, 3::2, ...]  # Skip Fm
     F_array = img_array[:, :, 2::2, ...]  # Skip F0
-    y2_array = (
-        Fm_prime_array - F_array
-    ) / Fm_prime_array  # shape (Ni, Nj, num_steps, 20, 20)
+    y2_array = (Fm_prime_array - F_array) / Fm_prime_array  # shape (Ni, Nj, num_steps, 20, 20)
     num_steps = Fm_prime_array.shape[2]
     assert num_steps == F_array.shape[2]
 
     y2_array_means = compute_masked_mean(mask_array, num_steps, y2_array)
 
     assert y2_array_means.shape == (img_array.shape[0], img_array.shape[1], num_steps)
-    assert np.nanmax(y2_array_means) < 1.0
-    assert (
-        np.nanmin(y2_array_means) > -1.0
-    ), f"minimum Y2 bound failed: {np.nanmin(y2_array_means)}"
+    assert np.nanmax(y2_array_means) < 1.0, f'Y2 greater than 1: {np.nanmax(y2_array_means)}'
+    assert np.nanmin(y2_array_means) > -1.0, f"Y2 smaller than -1: {np.nanmin(y2_array_means)}"
 
     # Check that the average Y2 of all wells at each time step is positive
     for i in range(num_steps):
-        assert (
-            np.nanmean(y2_array_means[:, :, i]) > 0.0
-        ), f"Y2 mean is negative at time step {i}: {np.nanmean(y2_array_means[:, :, i])}, \n {y2_array_means[:, :, i]}"
+        assert np.nanmean(y2_array_means[:, :, i]) > 0.0, f"Y2 mean is negative at time step {i}"
 
     return y2_array_means
 
@@ -79,6 +74,7 @@ def compute_masked_mean(
         (Ni, Nj, num_steps, mask_array.shape[2], mask_array.shape[-1]),
     )
     vals_array[~mask_array] = np.nan
+
     y2_array_means = np.nanmean(vals_array.reshape(Ni, Nj, num_steps, -1), axis=-1)
     return y2_array_means
 
