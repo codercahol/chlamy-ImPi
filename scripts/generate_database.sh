@@ -1,14 +1,14 @@
 #!/bin/bash
-
-# Activate conda env
-conda activate chlamy
+set -e
 
 # Download latest data
-cd ../data
-./download_latest_data_simple.sh
+cd ../data_13062024
+./download_data.sh
 
 # Generate segmentations
-cd ../chlamy_impi/well_segmentation_preprocessing
+cd ..
+export PYTHONPATH=$(pwd)
+cd chlamy_impi/well_segmentation_preprocessing
 python main.py
 
 # Create database
@@ -18,3 +18,4 @@ python main.py
 # Rename database using today's date
 cd ../../output/database_creation
 mv database.parquet database_$(date +%Y-%m-%d).parquet
+mv failed-files.csv failed-files_$(date +%Y-%m-%d).csv

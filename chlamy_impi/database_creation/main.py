@@ -195,15 +195,16 @@ def construct_well_info_df(failed_filenames: list[dict]) -> tuple[pd.DataFrame, 
 
         try:
             mask_array = compute_threshold_mask(img_array)
-            y2_array = compute_all_y2_averaged(img_array, mask_array)
-            fv_fm_array = compute_all_fv_fm_averaged(img_array, mask_array)
+            y2_array, y2_array_std = compute_all_y2_averaged(img_array, mask_array, return_std=True)
+            fv_fm_array, fv_fm_std = compute_all_fv_fm_averaged(img_array, mask_array, return_std=True)
             ynpq_array = compute_all_ynpq_averaged(img_array, mask_array)
 
-            # TODO: Re-implement these functions
+            # TODO: Re-implement these functions? I think they just provide the raw avg intensities.
             # includes F0
             #F_array = compute_all_F_averaged(img_array, mask_array)
             # includes Fm at t=0
             #Fm_array = compute_all_Fm_averaged(img_array, mask_array)
+
         except AssertionError as e:
             if IGNORE_ERRORS:
                 logger.error(f"Error computing image features for file {filename_npy.name}. Skipping.")
@@ -222,6 +223,7 @@ def construct_well_info_df(failed_filenames: list[dict]) -> tuple[pd.DataFrame, 
                 "i": i,
                 "j": j,
                 "fv_fm": fv_fm_array[i, j],
+                "fv_fm_std": fv_fm_std[i, j],
                 "mask_area": np.sum(mask_array[i, j]),
             }
 
@@ -236,6 +238,12 @@ def construct_well_info_df(failed_filenames: list[dict]) -> tuple[pd.DataFrame, 
                     row_data[f"y2_{tstep}"] = y2_array[i, j, tstep - 1]
                 except IndexError:
                     row_data[f"y2_{tstep}"] = np.nan
+
+            for tstep in range(1, tmax):
+                try:
+                    row_data[f"y2_std_{tstep}"] = y2_array_std[i, j, tstep - 1]
+                except IndexError:
+                    row_data[f"y2_std_{tstep}"] = np.nan
 
             for tstep in range(1, tmax):
                 try:
