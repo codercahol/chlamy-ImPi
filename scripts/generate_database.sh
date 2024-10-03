@@ -18,4 +18,5 @@ python main.py
 # Rename database using today's date
 cd ../../output/database_creation
 mv database.parquet database_$(date +%Y-%m-%d).parquet
-mv failed-files.csv failed-files_$(date +%Y-%m-%d).csv
+mv database.csv database_$(date +%Y-%m-%d).csv
+mv failed_files.csv failed_files_$(date +%Y-%m-%d).csv

@@ -10,7 +10,7 @@ import pyarrow as pa
 from pyarrow import parquet as pq
 
 from chlamy_impi.database_creation.constants import get_possible_frame_numbers
-from chlamy_impi.paths import get_database_output_dir, get_parquet_filename
+from chlamy_impi.paths import get_database_output_dir, get_parquet_filename, get_csv_filename
 
 logger = logging.getLogger(__name__)
 
@@ -126,6 +126,17 @@ def compute_measurement_times(meta_df: pd.DataFrame) -> list[datetime.datetime]:
 
     assert len(meta_df) <= max(get_possible_frame_numbers()) - 2, f"Unexpected number of rows in meta_df: {len(meta_df)}"
     return meta_df["Datetime"].tolist()
+
+
+def save_df_to_csv(df: pd.DataFrame):
+    output_dir = get_database_output_dir()
+    if not output_dir.exists():
+        output_dir.mkdir(parents=True)
+
+    filename = get_csv_filename()
+    df.to_csv(filename, index=False)
+    logger.info(f'CSV file saved at: {filename}')
+
 
 
 def save_df_to_parquet(df: pd.DataFrame):

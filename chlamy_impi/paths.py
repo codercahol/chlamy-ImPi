@@ -67,6 +67,10 @@ def get_parquet_filename():
     return DATABASE_DIR / "database.parquet"
 
 
+def get_csv_filename():
+    return DATABASE_DIR / "database.csv"
+
+
 def get_npy_and_csv_filenames(dev_mode: bool = False, failed_filenames: list[str] = None) -> tuple[list[Path], list[Path]]:
     """In this function, we get a list of all the .npy and .csv files in the input directory
 

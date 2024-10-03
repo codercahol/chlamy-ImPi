@@ -34,7 +34,7 @@ from chlamy_impi.database_creation.utils import (
     index_to_location_rowwise,
     parse_name,
     compute_measurement_times,
-    save_df_to_parquet,
+    save_df_to_parquet, save_df_to_csv,
 )
 from chlamy_impi.lib.fv_fm_functions import compute_all_fv_fm_averaged
 from chlamy_impi.lib.mask_functions import compute_threshold_mask
@@ -469,6 +469,10 @@ def main():
 
     logger.info("Writing dataframe to parquet file...")
     save_df_to_parquet(total_df)
+
+    logger.info("Writing dataframe to csv file...")
+    save_df_to_csv(total_df)
+
     logger.info("Successfully generated new database files!!!")
 
 
@@ -476,13 +480,19 @@ def report_file_processing_status(failed_files, total_df):
 
     # Add rows for all the successful files - get start date / plate number / measurement number from df
     successful_files = total_df[['plate', 'measurement', 'start_date', 'light_regime']].drop_duplicates().apply(
-        lambda x: f"{x['start_date'].strftime('%Y%m%d')}_{x['plate']}_{x['measurement']}_{x['light_regime']}", axis = 1).tolist()
+        lambda x: f"{x['start_date'].strftime('%Y%m%d')}_{x['plate']}-{x['measurement']}_{x['light_regime']}", axis = 1).tolist()
 
     for f in successful_files:
         failed_files.append({'filename': f, 'error': 'Successfully processed'})
 
     filenames_npy, _ = get_npy_and_csv_filenames(dev_mode=False)
-    assert len(filenames_npy) == len(failed_files)
+
+    assert len(failed_files) >= len(filenames_npy), f"Expected at least {len(filenames_npy)} files, got {len(failed_files)}"
+
+    failed_files_set = set([x['filename'] for x in failed_files])
+    filenames_set = set([x.stem for x in filenames_npy])
+
+    assert failed_files_set == filenames_set, "Failed files do not match filenames"
 
     write_dataframe(pd.DataFrame(failed_files), f"failed_files.csv")
 
