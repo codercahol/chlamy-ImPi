@@ -1,5 +1,5 @@
-# Import Rclone
-$rclonePath = "C:\path\to\rclone.exe"
+# Import Rclone - this absolute path is hardcoded to the shared laptop
+$rclonePath = "C:\Users\Burlacot lab\Downloads\rclone-v1.68.1-windows-amd64\rclone-v1.68.1-windows-amd64\rclone.exe"
 
 # Download all tifs and csvs in top-level directory
 & $rclonePath --drive-shared-with-me copy '"Google Drive - personal":"2023 Screening CliP library/Camera Data (tif, xpim, csv)"' . -v --filter "+ /*.csv" --filter "- /*/**" --filter "- /*.xpim"
