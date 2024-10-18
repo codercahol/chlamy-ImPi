@@ -5,7 +5,18 @@ number of Chlamydomonas reinhardtii mutants under various growth conditions.
 
 Note: this repository is still under development, so things might break and these instructions might be incomplete.
 
+
 ## Image processing
+
+###: 0. How to run script covering entire pipeline:
+
+How to run script on lab windows laptop:
+
+    1. Windows key. Type anaconda powershell. Select option: run as administrator.
+    2. Type: cd “C:\Users\Burlacot Lab\Documents\GitHub\chlamy-ImPi\scripts” (quotes are important here)
+    3. Type: .\generate_database.ps1
+    4. Monitor output from code
+    5. New files will appear in C:\Users\Burlacot Lab\Documents\GitHub\chlamy-ImPi\output\database_creation
 
 ### 1. Well segmentation
 
