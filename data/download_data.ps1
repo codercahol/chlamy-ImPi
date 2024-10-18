@@ -3,6 +3,7 @@ $rclonePath = 'C:\Users\Burlacot lab\Downloads\rclone-v1.68.1-windows-amd64\rclo
 
 # Download all files (except xpim) in top-level directory
 & $rclonePath "--drive-shared-with-me" "copy" "Google Drive - personal:2023 Screening CliP library/Camera Data (tif, xpim, csv)" "." "--filter" "- /*/**" "--filter" "- /*.xpim" "-v" "--update"
+& $rclonePath "--drive-shared-with-me" "copy" "Google Drive - personal:2023 Screening CliP library/Identities of Strains on Plates/Finalized Identities Phase I plates.xlsx" "." "-vv" "--update"
 
 Write-Output "Download complete."
 
@@ -25,7 +26,10 @@ Write-Output "Total number of tifs: $totalTifs"
 foreach ($csv in Get-ChildItem -Filter *.csv) {
     $tif = $csv.Name -replace '\.csv$', '.tif'
     if (-not (Test-Path -Path $tif)) {
-        Write-Output "Missing tif file for $($csv.Name)"
+        Write-Output "Missing tif file for $($csv.Name), deleting csv file."
+
+        # Remove the csv file
+        Remove-Item -Path $csv.FullName
     }
 }
 
@@ -33,6 +37,9 @@ foreach ($csv in Get-ChildItem -Filter *.csv) {
 foreach ($tif in Get-ChildItem -Filter *.tif) {
     $csv = $tif.Name -replace '\.tif$', '.csv'
     if (-not (Test-Path -Path $csv)) {
-        Write-Output "Missing csv file for $($tif.Name)"
+        Write-Output "Missing csv file for $($tif.Name), deleting tif file."
+
+        # Remove the tif file
+        Remove-Item -Path $tif.FullName
     }
 }

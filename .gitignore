@@ -186,6 +186,9 @@ cython_debug/
 .idea/
 
 output/image_processing
-data
+data/*.tif
+data/*.csv
+data/*.xlsx
+data_13062024
 output/database_creation
 output/well_segmentation_cache
